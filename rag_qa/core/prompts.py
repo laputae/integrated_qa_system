@@ -1,6 +1,6 @@
 # core/prompts.py
 # 导入 PromptTemplate 类，用于创建 Prompt 模板
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 
 # 定义 RAGPrompts 类，用于管理所有 Prompt 模板

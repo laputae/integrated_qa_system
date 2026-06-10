@@ -4,6 +4,7 @@ import pymysql
 import pandas as pd
 # 导入配置和日志
 import sys, os
+
 # 获取当前文件所在目录的绝对路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # print(f'current_dir--》{current_dir}')
@@ -12,6 +13,7 @@ module_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(module_dir)
 sys.path.insert(0, project_root)
 from base import Config, logger
+
 
 class MySQLClient:
     def __init__(self):
@@ -35,15 +37,29 @@ class MySQLClient:
             self.logger.error(f"MySQL 连接失败: {e}")
             raise
 
-
     def create_table(self):
         create_table_query = '''
-        CREATE TABLE IF NOT EXISTS jpkb (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            subject_name VARCHAR(20),
-            question VARCHAR(1000),
-            answer VARCHAR(1000))
-        '''
+                             CREATE TABLE IF NOT EXISTS jpkb
+                             (
+                                 id
+                                 INT
+                                 AUTO_INCREMENT
+                                 PRIMARY
+                                 KEY,
+                                 subject_name
+                                 VARCHAR
+                             (
+                                 20
+                             ),
+                                 question VARCHAR
+                             (
+                                 1000
+                             ),
+                                 answer VARCHAR
+                             (
+                                 1000
+                             )) \
+                             '''
         try:
             self.cursor.execute(create_table_query)
             self.connection.commit()
@@ -58,7 +74,7 @@ class MySQLClient:
             print(data.head())
             for _, row in data.iterrows():
                 insert_query = "INSERT INTO jpkb (subject_name, question, answer) VALUES (%s, %s, %s)"
-                self.cursor.execute(insert_query, (row["学科名称"], row["问题"],row["答案"]))
+                self.cursor.execute(insert_query, (row["学科名称"], row["问题"], row["答案"]))
             self.connection.commit()
             self.logger.info("Mysql数据插入成功")
         except Exception as e:
@@ -111,26 +127,14 @@ class MySQLClient:
         except pymysql.MySQLError as e:
             # 记录关闭失败
             self.logger.error(f"关闭连接失败: {e}")
+
+
 if __name__ == '__main__':
     mysql_client = MySQLClient()
-    # mysql_client.create_table()
-    # mysql_client.insert_data(csv_path='../data/JP学科知识问答.csv')
-    # results = mysql_client.fetch_questions()
-    # print(f'results--》{results}')
+    mysql_client.create_table()
+    mysql_client.insert_data(csv_path='../data/JP学科知识问答.csv')
+    results = mysql_client.fetch_questions()
+    print(f'results--》{results}')
     a = mysql_client.fetch_answer(question="在磁盘中无法新建文本文档")
     print(f'a--》{a}')
     mysql_client.close()
-
-
-
-
-
-
-
-
-
-
-
-
-
-

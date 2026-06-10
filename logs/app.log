@@ -1,0 +1,17 @@
+2026-06-10 16:29:47,534 - EduRAG - INFO - MySQL 连接成功
+2026-06-10 16:29:47,535 - EduRAG - INFO - 表创建成功
+2026-06-10 16:29:47,773 - EduRAG - INFO - Mysql数据插入成功
+2026-06-10 16:29:47,776 - EduRAG - INFO - 成功获取问题
+2026-06-10 16:29:47,780 - EduRAG - INFO - MySQL 连接已关闭
+2026-06-10 17:08:34,177 - EduRAG - INFO - 使用设置：cpu
+2026-06-10 17:08:34,636 - EduRAG - ERROR - 初始化 VectorStore 失败 (请检查 Milvus 连接配置): Unrecognized processing class in D:\BaiduNetdiskDownload\10.阶段十 智能体开发进阶-EduRAG智能问答系统\eduRAG项目资料\资料\完整代码\integrated_qa_system\rag_qa\models\bge-reranker-large. Can't instantiate a processor, a tokenizer, an image processor, a video processor or a feature extractor for this model. Make sure the repository contains the files of at least one of those processing classes.
+2026-06-10 17:11:44,599 - EduRAG - INFO - 使用设置：cpu
+2026-06-10 17:11:44,881 - EduRAG - ERROR - 初始化 VectorStore 失败 (请检查 Milvus 连接配置): Unrecognized processing class in D:\BaiduNetdiskDownload\10.阶段十 智能体开发进阶-EduRAG智能问答系统\eduRAG项目资料\资料\完整代码\integrated_qa_system\rag_qa\models\bge-reranker-large. Can't instantiate a processor, a tokenizer, an image processor, a video processor or a feature extractor for this model. Make sure the repository contains the files of at least one of those processing classes.
+2026-06-10 17:23:20,577 - EduRAG - INFO - 使用设置：cpu
+2026-06-10 17:23:22,144 - EduRAG - ERROR - 初始化 VectorStore 失败 (请检查 Milvus 连接配置): install error Command 'pip install -q peft' returned non-zero exit status 1.
+2026-06-10 17:28:52,013 - EduRAG - INFO - 使用设置：cpu
+2026-06-10 17:28:53,173 - EduRAG - ERROR - 初始化 VectorStore 失败 (请检查 Milvus 连接配置): install error Command 'pip install -q peft' returned non-zero exit status 1.
+2026-06-10 17:33:06,894 - EduRAG - INFO - 使用设置：cpu
+2026-06-10 17:33:21,749 - EduRAG - ERROR - 初始化 VectorStore 失败 (请检查 Milvus 连接配置): install error Command 'pip install -q peft' returned non-zero exit status 1.
+2026-06-10 17:37:15,202 - EduRAG - INFO - 使用设置：cpu
+2026-06-10 17:38:40,352 - EduRAG - ERROR - 初始化 VectorStore 失败 (请检查 Milvus 连接配置): No module named 'FlagEmbedding'

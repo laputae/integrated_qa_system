@@ -5,7 +5,7 @@ from milvus_model.hybrid import BGEM3EmbeddingFunction
 # 导入 Milvus 相关类，用于操作向量数据库
 from pymilvus import MilvusClient, DataType, AnnSearchRequest, WeightedRanker
 # 导入 Document 类，用于创建文档对象
-from langchain.docstore.document import Document
+from langchain_core.documents import Document
 # 导入 CrossEncoder，用于重排序和 NLI 判断
 from sentence_transformers import CrossEncoder
 # 导入 hashlib 模块，用于生成唯一 ID 的哈希值

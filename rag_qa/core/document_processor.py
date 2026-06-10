@@ -2,7 +2,7 @@
 import os
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders.markdown import UnstructuredMarkdownLoader
-from langchain.text_splitter import MarkdownTextSplitter
+from langchain_text_splitters import MarkdownTextSplitter
 from datetime import datetime
 import sys
 # 获取当前文件所在目录的绝对路径

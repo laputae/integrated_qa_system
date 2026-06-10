@@ -12,7 +12,7 @@ sys.path.insert(0, rag_qa_path)
 project_root = os.path.dirname(rag_qa_path)
 sys.path.insert(0, project_root)
 # 导入 LangChain 提示模板
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 # 导入日志和配置
 from base import logger, Config
 # 导入 OpenAI
