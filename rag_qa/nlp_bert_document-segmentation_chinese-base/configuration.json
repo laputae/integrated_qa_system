@@ -1,0 +1,14 @@
+{
+    "framework": "pytorch",
+    "task": "document-segmentation",
+    "model": {
+        "type": "bert-for-document-segmentation",
+        "model_config": {
+            "type": "bert",
+            "level": "doc"
+        }
+    },
+    "pipeline": {
+        "type": "document-segmentation"
+    }
+}

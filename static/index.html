@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>传智教育EduRAG智慧问答系统</title>
+    <!-- 引入 Font Awesome 图标库 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <!-- 引入 marked.js 用于解析 Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #4a6fa5; /* 主要颜色 */
+            --secondary-color: #6c757d; /* 次要颜色 */
+            --accent-color: #61dafb; /* 强调颜色 */
+            --bg-color: #f8f9fa; /* 背景颜色 */
+            --text-color: #343a40; /* 文本颜色 */
+            --border-color: #dee2e6; /* 边框颜色 */
+            --hover-color: #e9ecef; /* 悬停颜色 */
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem;
+            display: flex;
+            flex: 1;
+            flex-direction: column;
+        }
+
+        .chat-container {
+            display: flex;
+            height: calc(100vh - 180px);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar {
+            width: 250px;
+            background-color: #f1f3f5;
+            padding: 1rem;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .chat-history {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+
+        .chat-input-container {
+            padding: 1rem;
+            border-top: 1px solid var(--border-color);
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .source-filter {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .source-filter select {
+            margin-left: 0.5rem;
+            padding: 0.3rem;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .input-group {
+            display: flex;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px 0 0 4px;
+            font-size: 1rem;
+            resize: none;
+            height: 45px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .send-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0 1.25rem;
+            border-radius: 0 4px 4px 0;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.2s;
+        }
+
+        .send-btn:hover {
+            background-color: #3a5a8c;
+        }
+
+        .send-btn:disabled {
+            background-color: var(--secondary-color);
+            cursor: not-allowed;
+        }
+
+        .message {
+            margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message-content {
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            max-width: 80%;
+            word-break: break-word;
+        }
+
+        .user-message {
+            align-self: flex-end;
+        }
+
+        .user-message .message-content {
+            background-color: var(--primary-color);
+            color: white;
+            align-self: flex-end;
+        }
+
+        .system-message {
+            align-self: flex-start;
+        }
+
+        .system-message .message-content {
+            background-color: #e9ecef;
+            align-self: flex-start;
+        }
+
+        /* 代码块样式 */
+        .message-content pre {
+            background-color: #f4f4f4;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+
+        .message-content code {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9rem;
+        }
+
+        .typing-indicator {
+            display: inline-block;
+            padding: 0.75rem 1rem;
+            background-color: #e9ecef;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .typing-indicator span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--secondary-color);
+            margin-right: 4px;
+            animation: typing 1s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+            margin-right: 0;
+        }
+
+        @keyframes typing {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-5px);
+            }
+        }
+
+        .session-controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .new-session-btn, .clear-history-btn {
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background-color 0.2s;
+        }
+
+        .new-session-btn:hover, .clear-history-btn:hover {
+            background-color: #5a6268;
+        }
+
+        .session-info {
+            font-size: 0.9rem;
+            color: var(--secondary-color);
+            margin-top: 1rem;
+        }
+
+        .history-title {
+            font-weight: bold;
+            margin-bottom: 1rem;
+            color: var(--primary-color);
+        }
+
+        .history-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .history-item:hover {
+            background-color: var(--hover-color);
+        }
+
+        .history-question {
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .history-answer {
+            color: var(--secondary-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 0.85rem;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            visibility: hidden;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-left-color: var(--primary-color);
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .chat-container {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+                max-height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>传智教育EduRAG智慧问答系统</h1>
+    </header>
+
+    <div class="container">
+        <div class="chat-container">
+            <div class="sidebar">
+                <!-- 会话控制按钮 -->
+                <div class="session-controls">
+                    <button class="new-session-btn" id="newSessionBtn">
+                        <i class="fas fa-plus"></i> 新会话
+                    </button>
+                    <button class="clear-history-btn" id="clearHistoryBtn">
+                        <i class="fas fa-trash"></i> 清除历史
+                    </button>
+                </div>
+                <div class="history-title">历史会话</div>
+                <div class="history-list" id="historyList">
+                    <!-- 历史会话将动态添加到这里 -->
+                </div>
+                <div class="session-info" id="sessionInfo"></div>
+            </div>
+
+            <div class="main-content">
+                <div class="chat-history" id="chatHistory">
+                    <!-- 消息将动态添加到这里 -->
+                    <div class="message system-message">
+                        <div class="message-content">
+                            您好！我是智能问答助手，有什么我可以帮您的吗？
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input-container">
+                    <div class="source-filter">
+                        <label for="sourceFilter">学科类别：</label>
+                        <select id="sourceFilter">
+                            <option value="">全部</option>
+                            <!-- 学科类别选项将动态添加 -->
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <textarea class="chat-input" id="chatInput" placeholder="请输入您的问题..."
+                            rows="1" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+                        <button class="send-btn" id="sendBtn">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="loading-overlay" id="loadingOverlay">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let currentSessionId = null; // 当前会话 ID
+        let isResponseInProgress = false; // 是否正在处理响应
+        let socket = null; // WebSocket 连接
+
+        // DOM 元素
+        const chatHistory = document.getElementById('chatHistory'); // 聊天历史容器
+        const chatInput = document.getElementById('chatInput'); // 输入框
+        const sendBtn = document.getElementById('sendBtn'); // 发送按钮
+        const sourceFilter = document.getElementById('sourceFilter'); // 学科过滤器
+        const historyList = document.getElementById('historyList'); // 历史列表
+        const sessionInfo = document.getElementById('sessionInfo'); // 会话信息
+        const newSessionBtn = document.getElementById('newSessionBtn'); // 新会话按钮
+        const clearHistoryBtn = document.getElementById('clearHistoryBtn'); // 清除历史按钮
+        const loadingOverlay = document.getElementById('loadingOverlay'); // 加载遮罩
+
+        // API URL 前缀，根据部署环境调整
+        const API_BASE_URL = ''; // 如果 API 和前端在同一域，可以留空
+
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 创建新会话
+            await createNewSession();
+
+            // 加载学科类别
+            await loadSources();
+
+            // 事件监听器
+            sendBtn.addEventListener('click', sendMessage); // 发送按钮点击事件
+            chatInput.addEventListener('keydown', (e) => { // 输入框键盘事件
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            newSessionBtn.addEventListener('click', createNewSession); // 新会话按钮点击事件
+            clearHistoryBtn.addEventListener('click', clearHistory); // 清除历史按钮点击事件
+        });
+
+        // 创建新会话
+        async function createNewSession() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/create_session`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error('创建会话失败');
+                }
+
+                const data = await response.json();
+                currentSessionId = data.session_id; // 更新当前会话 ID
+
+                // 更新会话信息
+                sessionInfo.textContent = `会话ID: ${currentSessionId.slice(0, 8)}...`;
+
+                // 清空聊天历史
+                clearChatHistory();
+
+                // 加载会话历史
+                await loadHistory();
+
+            } catch (error) {
+                console.error('创建会话错误:', error);
+                alert('创建会话失败，请刷新页面重试');
+            }
+        }
+
+        // 加载学科类别
+        async function loadSources() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/sources`);
+
+                if (!response.ok) {
+                    throw new Error('获取学科类别失败');
+                }
+
+                const data = await response.json();
+
+                // 清空现有选项
+                sourceFilter.innerHTML = '<option value="">全部</option>';
+
+                // 添加学科类别选项
+                data.sources.forEach(source => {
+                    const option = document.createElement('option');
+                    option.value = source;
+                    option.textContent = source;
+                    sourceFilter.appendChild(option);
+                });
+
+            } catch (error) {
+                console.error('加载学科类别错误:', error);
+            }
+        }
+
+        // 加载历史消息（支持多轮 QA）
+        async function loadHistory() {
+            if (!currentSessionId) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/history/${currentSessionId}`);
+
+                if (!response.ok) {
+                    throw new Error('获取历史记录失败');
+                }
+
+                const data = await response.json();
+
+                // 清空历史列表
+                historyList.innerHTML = '';
+
+                // 将历史记录按会话分组（每组最多 10 轮）
+                const sessionItem = document.createElement('div');
+                sessionItem.className = 'history-item';
+                sessionItem.innerHTML = `
+                    <div class="history-question">会话 ${currentSessionId.slice(0, 8)}...</div>
+                    <div class="history-answer">共 ${data.history.length} 轮对话</div>
+                `;
+
+                // 点击历史记录项显示整个会话
+                sessionItem.addEventListener('click', () => {
+                    // 清空现有聊天记录
+                    clearChatHistory();
+
+                    // 添加整个会话的 QA 对
+                    data.history.forEach(item => {
+                        addMessage('user', item.question); // 添加用户问题
+                        addMessage('system', item.answer); // 添加系统回答
+                    });
+
+                    // 滚动到底部
+                    scrollToBottom();
+                });
+
+                historyList.appendChild(sessionItem);
+
+            } catch (error) {
+                console.error('加载历史记录错误:', error);
+            }
+        }
+
+        // 清除历史记录
+        async function clearHistory() {
+            if (!currentSessionId) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/history/${currentSessionId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error('清除历史记录失败');
+                }
+
+                // 清空历史列表
+                historyList.innerHTML = '';
+
+                // 清空聊天历史
+                clearChatHistory();
+
+                // 添加欢迎消息
+                chatHistory.innerHTML = `
+                    <div class="message system-message">
+                        <div class="message-content">
+                            历史记录已清除，有什么我可以帮您的吗？
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('清除历史记录错误:', error);
+                alert('清除历史记录失败');
+            }
+        }
+
+        // 清空聊天历史
+        function clearChatHistory() {
+            chatHistory.innerHTML = `
+                <div class="message system-message">
+                    <div class="message-content">
+                        您好！我是智能问答助手，有什么我可以帮您的吗？
+                    </div>
+                </div>
+            `;
+        }
+
+        // 发送消息
+        async function sendMessage() {
+            const query = chatInput.value.trim();
+            const filter = sourceFilter.value;
+
+            if (!query || isResponseInProgress) return;
+
+            // 重置输入框
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+
+            // 添加用户消息到聊天窗口
+            addMessage('user', query);
+
+            // 设置正在响应标志
+            isResponseInProgress = true;
+
+            // 添加正在输入指示器
+            const typingIndicator = document.createElement('div');
+            typingIndicator.className = 'typing-indicator';
+            typingIndicator.innerHTML = '<span></span><span></span><span></span>';
+            chatHistory.appendChild(typingIndicator);
+
+            // 滚动到底部
+            scrollToBottom();
+
+            try {
+                // 发送查询请求
+                const response = await fetch(`${API_BASE_URL}/api/query`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        source_filter: filter,
+                        session_id: currentSessionId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('查询失败');
+                }
+
+                const data = await response.json();
+
+                // 移除输入指示器
+                if (typingIndicator.parentNode) {
+                    chatHistory.removeChild(typingIndicator);
+                }
+
+                // 如果需要流式输出，使用 WebSocket
+                if (data.is_streaming) {
+                    // 创建系统消息容器，但内容为空
+                    const messageElement = document.createElement('div');
+                    messageElement.className = 'message system-message';
+
+                    const contentElement = document.createElement('div');
+                    contentElement.className = 'message-content';
+                    contentElement.innerHTML = ''; // 初始化为空
+
+                    messageElement.appendChild(contentElement);
+                    chatHistory.appendChild(messageElement);
+
+                    // 建立 WebSocket 连接进行流式输出
+                    await handleStreamingResponse(query, filter, contentElement);
+                } else {
+                    // 直接添加格式化后的答案
+                    addMessage('system', data.answer);
+                }
+
+                // 重新加载历史记录
+                await loadHistory();
+
+            } catch (error) {
+                console.error('发送消息错误:', error);
+
+                // 移除输入指示器
+                if (typingIndicator.parentNode) {
+                    chatHistory.removeChild(typingIndicator);
+                }
+
+                // 添加错误消息
+                addMessage('system', `抱歉，发生错误: ${error.message}`);
+            } finally {
+                // 清除正在响应标志
+                isResponseInProgress = false;
+
+                // 滚动到底部
+                scrollToBottom();
+            }
+        }
+
+        // 处理流式响应
+        async function handleStreamingResponse(query, filter, contentElement) {
+            // 关闭现有连接
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.close();
+            }
+
+            return new Promise((resolve, reject) => {
+                // WebSocket URL
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${window.location.host}${API_BASE_URL}/api/stream`;
+
+                // 创建 WebSocket 连接
+                socket = new WebSocket(wsUrl);
+
+                let accumulatedContent = ''; // 累积流式内容
+
+                // 连接建立时
+                socket.onopen = function() {
+                    console.log('WebSocket 连接已建立');
+
+                    // 发送查询请求
+                    socket.send(JSON.stringify({
+                        query: query,
+                        source_filter: filter,
+                        session_id: currentSessionId
+                    }));
+                };
+
+                // 接收消息时
+                socket.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+
+                    switch (data.type) {
+                        case 'start':
+                            console.log('流式响应开始');
+                            break;
+
+                        case 'token':
+                            // 追加 token 到内容
+                            accumulatedContent += data.token;
+                            // 使用 marked.js 解析 Markdown 格式
+                            contentElement.innerHTML = marked.parse(accumulatedContent);
+                            scrollToBottom();
+                            break;
+
+                        case 'end':
+                            console.log('流式响应结束');
+                            socket.close();
+                            resolve();
+                            break;
+
+                        case 'error':
+                            console.error('流式响应错误:', data.error);
+                            contentElement.innerHTML += `<p>[错误: ${data.error}]</p>`;
+                            socket.close();
+                            reject(new Error(data.error));
+                            break;
+                    }
+                };
+
+                // 发生错误时
+                socket.onerror = function(error) {
+                    console.error('WebSocket 错误:', error);
+                    contentElement.innerHTML += '<p>[连接错误]</p>';
+                    reject(error);
+                };
+
+                // 连接关闭时
+                socket.onclose = function() {
+                    console.log('WebSocket 连接已关闭');
+                    resolve();
+                };
+            });
+        }
+
+        // 添加消息到聊天窗口（支持 Markdown 格式）
+        function addMessage(type, content) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${type === 'user' ? 'user-message' : 'system-message'}`;
+
+            const contentElement = document.createElement('div');
+            contentElement.className = 'message-content';
+            // 使用 marked.js 解析 Markdown 格式（支持换行和代码块）
+            contentElement.innerHTML = marked.parse(content);
+
+            messageElement.appendChild(contentElement);
+            chatHistory.appendChild(messageElement);
+
+            // 滚动到底部
+            scrollToBottom();
+        }
+
+        // 滚动到底部
+        function scrollToBottom() {
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+    </script>
+</body>
+</html>
