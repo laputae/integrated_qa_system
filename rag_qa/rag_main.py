@@ -12,10 +12,12 @@ project_root = os.path.dirname(rag_qa_path)
 sys.path.insert(0, project_root)
 
 from base import Config, logger
-from core.document_processor import process_documents # 导入处理文档的函数
+# IMPORTANT: vector_store must be imported first — it initializes milvus_model/torch
+# in a way that prevents a segfault when transformers/sentence-transformers load later
 from core.vector_store import VectorStore
+from core.document_processor import process_documents
 from core.rag_system import RAGSystem
-from openai import OpenAI # 使用 OpenAI 接口
+from openai import OpenAI
 
 conf = Config()
 

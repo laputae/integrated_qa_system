@@ -1,7 +1,10 @@
 # 这个脚本讲义的代码架构图没有体现，需要进行补充
 import os
 from langchain_community.document_loaders import TextLoader
-from langchain_community.document_loaders.markdown import UnstructuredMarkdownLoader
+try:
+    from langchain_community.document_loaders.markdown import UnstructuredMarkdownLoader
+except ImportError:
+    UnstructuredMarkdownLoader = None
 from langchain_text_splitters import MarkdownTextSplitter
 from datetime import datetime
 import sys
@@ -36,8 +39,8 @@ document_loaders = {
     ".jpg": OCRIMGLoader,
     # PNG 文件使用 OCRIMGLoader
     ".png": OCRIMGLoader,
-    # Markdown 文件使用 UnstructuredMarkdownLoader
-    ".md": UnstructuredMarkdownLoader
+    # Markdown 文件: 优先 UnstructuredMarkdownLoader, 回退 TextLoader
+    ".md": UnstructuredMarkdownLoader if UnstructuredMarkdownLoader is not None else TextLoader
 }
 # 定义函数，从指定文件夹加载多种类型文件并添加元数据
 def load_documents_from_directory(directory_path):

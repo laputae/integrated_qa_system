@@ -32,6 +32,12 @@ conf = Config()
 
 # core/vector_store.py
 # 定义 VectorStore 类，封装向量存储和检索功能
+def _sparse_row_to_dict(sparse_row) -> dict:
+    """兼容 csr_matrix (有 indices) 和 coo_array (有 col)"""
+    indices = sparse_row.indices if hasattr(sparse_row, 'indices') else sparse_row.col
+    return dict(zip(indices, sparse_row.data))
+
+
 class VectorStore:
     # 初始化方法，设置向量存储的基本参数
     def __init__(self,
@@ -139,22 +145,7 @@ class VectorStore:
             text_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
             # print(f'text_hash--》{text_hash}')
             # print(f'text_hash--》{type(text_hash)}')
-            # 初始化一个稀疏向量的字典（Milvus要求存储稀疏向量的格式）
-            sparse_vector = {}
-            # 获取第i行对应的稀疏向量数据[0.4, 0.2, 0, 0, 0.1]
-            row = embeddings["sparse"].getrow(i)
-            # row = embeddings["sparse"][i]:新版本milvus-model，支持这种获取稀疏向量的形式
-            # indics = row.row
-            # print(f'row--》{row}')
-            # print(f'row--》{row.shape}')
-            # 获取稀疏向量的非零值的索引
-            indics = row.indices
-            # print(f'indics--》{indics}')
-            # 获取稀疏向量的非零值
-            values = row.data
-            # 将索引和值进行配对，存储到字典中
-            for idx, value in zip(indics, values):
-                sparse_vector[idx] = value
+            sparse_vector = _sparse_row_to_dict(embeddings["sparse"][i])
             # print(f'sparse_vector--》{sparse_vector}')
             # print(f'sparse_vector--》{len(sparse_vector)}')
             # print(embeddings["dense"][i])
@@ -185,17 +176,7 @@ class VectorStore:
         # print(f'query_embeddings---》{query_embeddings}')
         dense_query_vector = query_embeddings["dense"][0]
         # print(f'dense_query_vector--》{dense_query_vector.shape}')
-        # 初始化查询的稀疏向量字典
-        sparse_query_vector = {}
-        # 获取查询稀疏向量的第 0 行数据
-        row = query_embeddings["sparse"].getrow(0)
-        # 获取稀疏向量的非零值索引
-        indices = row.indices
-        # 获取稀疏向量的非零值
-        values = row.data
-        # 将索引和值配对，填充稀疏向量字典
-        for idx, value in zip(indices, values):
-            sparse_query_vector[idx] = value
+        sparse_query_vector = _sparse_row_to_dict(query_embeddings["sparse"][0])
         # print(f'sparse_query_vector-->{sparse_query_vector}')
         # 初始化过滤表达式，默认不过滤
         filter_expr = f"source == '{source_filter}'" if source_filter else ""
