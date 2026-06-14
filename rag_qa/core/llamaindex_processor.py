@@ -6,6 +6,7 @@ LlamaIndex 文档处理器 - 混合模式
 - 索引构建：使用 LlamaIndex VectorStoreIndex 实现增量更新
 """
 import os
+import re
 import sys
 import torch
 from datetime import datetime
@@ -58,6 +59,48 @@ document_loaders = {
     ".png": OCRIMGLoader,
     ".md": UnstructuredMarkdownLoader if UnstructuredMarkdownLoader is not None else TextLoader
 }
+def clean_document_text(text: str) -> str:
+    """OCR文本预处理管道：去除噪音、规范化空白、统一标点"""
+    if not text:
+        return text
+
+    # 1. 去除零宽字符
+    text = re.sub(r'[​‌‍‎‏﻿⁠⁡⁢⁣⁤￾￿­ -    　]', '', text)
+
+    # 2. 规范化换行 → 单 \n
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # 3. 统一中英文标点
+    text = text.replace('，', ',')
+    text = text.replace('；', ';')
+    text = text.replace('：', ':')
+    text = text.replace('（', '(').replace('）', ')')
+    text = text.replace('“', '"').replace('”', '"')
+    text = text.replace('‘', "'").replace('’', "'")
+    text = text.replace('【', '[').replace('】', ']')
+    text = text.replace('《', '<').replace('》', '>')
+    text = text.replace('！', '!')
+    text = text.replace('？', '?')
+    text = text.replace('～', '~')
+
+    # 4. 去除页码/页眉/页脚噪音
+    text = re.sub(r'^\s*\d{1,4}\s*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*[\(（]?\d{1,4}[\)）]?\s*$', '', text, flags=re.MULTILINE)
+
+    # 5. 压缩多余空白
+    text = re.sub(r'[ \t]{2,}', ' ', text)
+    text = re.sub(r'^[ \t]+|[ \t]+$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\n +', '\n', text)
+    text = re.sub(r' +\n', '\n', text)
+
+    # 6. 清理连续空行
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = text.strip()
+
+    return text
+
+
 class LlamaIndexProcessor:
     """
     混合模式处理器：
@@ -137,6 +180,7 @@ class LlamaIndexProcessor:
                         loaded_docs = loader.load()
 
                         for doc in loaded_docs:
+                            doc.page_content = clean_document_text(doc.page_content)
                             doc.metadata["source"] = source
                             doc.metadata["file_path"] = file_path
                             doc.metadata["timestamp"] = datetime.now().isoformat()

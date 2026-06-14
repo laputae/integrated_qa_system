@@ -52,14 +52,15 @@ integrated_qa_system/
 │   └── data/                      # 问答对 CSV 数据
 │
 ├── rag_qa/                        # RAG 模块（Tier 2）
-│   ├── rag_main.py                # RAG CLI（数据预处理/交互查询）
+│   ├── rag_main.py                # RAG CLI（数据预处理 / 交互查询）
 │   ├── core/
 │   │   ├── new_rag_system.py      # RAGSystem v2（流式 + 对话历史）
 │   │   ├── vector_store.py        # Milvus 向量库 + BGE-M3 混合检索 + 重排序
 │   │   ├── query_classifier.py    # BERT 查询分类器（通用/专业）
 │   │   ├── strategy_selector.py   # LLM 检索策略选择器
 │   │   ├── prompts.py             # LangChain Prompt 模板
-│   │   └── document_processor.py  # 文档加载 + 父子块分割
+│   │   ├── document_processor.py  # 文档加载 + 父子块分割
+│   │   └── llamaindex_processor.py # LlamaIndex 文档处理后端
 │   ├── edu_document_loaders/      # 自定义文档加载器（含 OCR）
 │   ├── edu_text_spliter/          # 中文感知文本分割器
 │   ├── rag_assesment/             # RAGAS 质量评估
@@ -74,13 +75,14 @@ integrated_qa_system/
 ├── app.py                         # FastAPI 主入口（WebSocket + REST + 静态服务）
 ├── api.py                         # FastAPI SSE 流式接口
 ├── config.ini                     # 全局配置文件
-├── pyproject.toml                 # 项目元数据与依赖
+├── pyproject.toml                 # 项目元数据与依赖（uv 管理）
 └── logs/                          # 运行日志
 ```
 
 ## 环境要求
 
 - **Python** ≥ 3.12
+- **uv**（Python 包管理器，推荐）
 - **MySQL** 5.7+（建议 8.0）
 - **Redis** 6.0+
 - **Milvus** 2.4+（建议使用 Milvus Lite 或 Standalone）
@@ -93,21 +95,12 @@ integrated_qa_system/
 git clone <repo-url>
 cd integrated_qa_system
 
-# 2. 创建虚拟环境
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# Linux/macOS
-source .venv/bin/activate
+# 2. 安装依赖（uv 自动创建虚拟环境）
+uv sync
 
-# 3. 安装依赖
-pip install -e .
-# 或使用 requirements.txt
-pip install -r requirments.txt
-
-# 4. 下载本地模型（放到 rag_qa/models/ 目录）
-#   - BAAI/bge-m3           → rag_qa/models/bge-m3/
-#   - BAAI/bge-reranker-large → rag_qa/models/bge-reranker-large/
+# 3. 下载本地模型（放到 rag_qa/models/ 目录）
+#   - BAAI/bge-m3              → rag_qa/models/bge-m3/
+#   - BAAI/bge-reranker-large  → rag_qa/models/bge-reranker-large/
 #   - google-bert/bert-base-chinese → rag_qa/models/bert-base-chinese/
 ```
 
@@ -117,10 +110,10 @@ pip install -r requirments.txt
 
 ```ini
 [mysql]
-host = localhost          # MySQL 主机地址
+host = 127.0.0.1
 user = root
 password = 123456
-database = subjects_kg    # 数据库名（需提前创建）
+database = subjects_kg
 
 [redis]
 host = 127.0.0.1
@@ -136,7 +129,7 @@ collection_name = edurag_final
 
 [llm]
 model = deepseek-v4-pro
-dashscope_api_key =       # 你的 API Key（也支持环境变量 DEEPSEEK_API_KEY）
+dashscope_api_key =           # 你的 API Key（也支持环境变量 DEEPSEEK_API_KEY）
 dashscope_base_url = https://api.deepseek.com
 
 [retrieval]
@@ -186,10 +179,34 @@ client.close()
 
 ### 3. 构建 RAG 向量库
 
-```bash
-# 将文档放入 rag_qa/data/ 对应学科目录，然后执行数据预处理
-python rag_qa/rag_main.py --data-processing
+**文档目录结构**：
+
+处理脚本会遍历 `config.ini` 中 `valid_sources` 配置的每个学科（如 `ai`、`java`、`test`、`ops`、`bigdata`），在 `--data-dir` 指定的目录下查找 `<source>_data` 子目录。默认目录结构如下：
+
 ```
+rag_qa/data/
+├── ai_data/          # AI 学科文档
+│   ├── xxx.pdf
+│   ├── xxx.docx
+│   └── xxx.md
+├── java_data/        # Java 学科文档
+│   └── xxx.pptx
+├── test_data/        # 测试学科文档
+├── ops_data/         # 运维学科文档
+└── bigdata_data/     # 大数据学科文档
+```
+
+**执行构建**：
+
+```bash
+# 使用默认文档目录（rag_qa/data/）
+uv run python rag_qa/rag_main.py --data-processing
+
+# 指定自定义文档目录
+uv run python rag_qa/rag_main.py --data-processing --data-dir /path/to/your/documents
+```
+
+`--data-dir` 默认为 `./data`（相对于项目根目录），即 `rag_qa/data/`。
 
 此命令将：
 - 加载各学科文档（MD / PDF / DOCX / PPTX / 图片）
@@ -202,7 +219,7 @@ python rag_qa/rag_main.py --data-processing
 ### 方式一：Web 全功能模式（推荐）
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8000
+uv run uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
 启动后访问 `http://localhost:8000` 使用 Web 聊天界面。
@@ -223,7 +240,7 @@ API 端点：
 ### 方式二：SSE 流式接口
 
 ```bash
-uvicorn api:app --host 0.0.0.0 --port 8000
+uv run uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
 POST `/query` 请求体：
@@ -239,9 +256,9 @@ POST `/query` 请求体：
 ### 方式三：命令行交互
 
 ```bash
-python new_main.py          # 集成问答（BM25 + RAG + 对话历史）
-python mysql_qa/main.py     # MySQL BM25 独立问答
-python rag_qa/rag_main.py   # RAG 独立问答
+uv run python new_main.py          # 集成问答（BM25 + RAG + 对话历史）
+uv run python mysql_qa/main.py     # MySQL BM25 独立问答
+uv run python rag_qa/rag_main.py   # RAG 独立问答
 ```
 
 ## 核心技术说明
@@ -297,7 +314,7 @@ LLM 根据查询特征自动从四种策略中选取：
 
 ```bash
 cd rag_qa/rag_assesment
-python rag_as.py
+uv run python rag_as.py
 ```
 
 使用 RAGAS 框架评估四个指标：**Faithfulness**、**Answer Relevancy**、**Context Precision**、**Context Recall**。
