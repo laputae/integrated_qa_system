@@ -51,7 +51,7 @@ class RAGSystem:
         backtrack_prompt_template = RAGPrompts.backtracking_prompt()  # 使用 template 后缀区分
         try:
             #   调用大语言模型生成回溯问题
-            simplified_query = self.llm(backtrack_prompt_template.format(query=query)).strip()
+            simplified_query = ''.join(self.llm(backtrack_prompt_template.format(query=query))).strip()
             logger.info(f"生成的回溯问题: '{simplified_query}'")
             #   使用回溯问题进行检索，并返回检索结果
             return self.vector_store.hybrid_search_with_rerank(
@@ -68,7 +68,7 @@ class RAGSystem:
         subquery_prompt_template = RAGPrompts.subquery_prompt()  # 使用 template 后缀区分
         try:
             #   调用大语言模型生成子查询列表
-            subqueries_text = self.llm(subquery_prompt_template.format(query=query)).strip()
+            subqueries_text = ''.join(self.llm(subquery_prompt_template.format(query=query))).strip()
             # print(f'subqueries_text--》{subqueries_text}')
             subqueries = [q.strip() for q in subqueries_text.split("\n") if q.strip()]
             logger.info(f"生成的子查询: {subqueries}")
@@ -107,7 +107,7 @@ class RAGSystem:
         hyde_prompt_template = RAGPrompts.hyde_prompt()  # 使用 template 后缀区分
         #   调用大语言模型生成假设答案
         try:
-            hypo_answer = self.llm(hyde_prompt_template.format(query=query)).strip()
+            hypo_answer = ''.join(self.llm(hyde_prompt_template.format(query=query))).strip()
             logger.info(f"HyDE 生成的假设答案: '{hypo_answer}'")
             #   使用假设答案进行检索，并返回检索结果
             return self.vector_store.hybrid_search_with_rerank(
