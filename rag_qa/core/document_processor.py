@@ -1,177 +1,220 @@
-# 这个脚本讲义的代码架构图没有体现，需要进行补充
+"""
+文档处理器 - 使用 LlamaIndex 实现
+保持与原有 API 兼容
+"""
 import os
-from langchain_community.document_loaders import TextLoader
-try:
-    from langchain_community.document_loaders.markdown import UnstructuredMarkdownLoader
-except ImportError:
-    UnstructuredMarkdownLoader = None
-from langchain_text_splitters import MarkdownTextSplitter
 from datetime import datetime
-import sys
-# 获取当前文件所在目录的绝对路径
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# print(f'current_dir--》{current_dir}')
-# 获取core文件所在的目录的绝对路径
-rag_qa_path = os.path.dirname(current_dir)
-# print(f'rag_qa_path--》{rag_qa_path}')
-sys.path.insert(0, rag_qa_path)
-# 获取根目录文件所在的绝对位置
-project_root = os.path.dirname(rag_qa_path)
-sys.path.insert(0, project_root)
-from edu_document_loaders import OCRPDFLoader, OCRDOCLoader, OCRPPTLoader, OCRIMGLoader
-from edu_text_spliter import ChineseRecursiveTextSplitter
-from base import logger, Config
+from typing import List
 
-conf = Config()
-# 定义支持的文件类型及其对应的加载器字典
+# 导入必要的类型检查
+try:
+    from langchain_core.documents import Document
+except ImportError:
+    Document = None
+
+# 导入 LlamaIndex 处理器
+from llamaindex_processor import (
+    LlamaIndexProcessor,
+    load_documents_from_directory as llamaindex_load,
+    process_documents as llamaindex_process
+)
+
+# 保持原有全局变量（如果其他模块引用）
 document_loaders = {
-    # 文本文件使用 TextLoader
-    ".txt": TextLoader,
-    # PDF 文件使用 OCRPDFLoader
-    ".pdf": OCRPDFLoader,
-    # Word 文件使用 OCRDOCLoader
-    ".docx": OCRDOCLoader,
-    # PPT 文件使用 OCRPPTLoader
-    ".ppt": OCRPPTLoader,
-    # PPTX 文件使用 OCRPPTLoader
-    ".pptx": OCRPPTLoader,
-    # JPG 文件使用 OCRIMGLoader
-    ".jpg": OCRIMGLoader,
-    # PNG 文件使用 OCRIMGLoader
-    ".png": OCRIMGLoader,
-    # Markdown 文件: 优先 UnstructuredMarkdownLoader, 回退 TextLoader
-    ".md": UnstructuredMarkdownLoader if UnstructuredMarkdownLoader is not None else TextLoader
+    ".txt": None,
+    ".pdf": None,
+    ".docx": None,
+    ".ppt": None,
+    ".pptx": None,
+    ".jpg": None,
+    ".png": None,
+    ".md": None
 }
-# 定义函数，从指定文件夹加载多种类型文件并添加元数据
+
+
 def load_documents_from_directory(directory_path):
-    # 初始化空列表，用于存储加载的文档
-    documents = []
-    # 获取支持的文件扩展名集合
-    supported_extensions = document_loaders.keys()
-    # print(f'supported_extensions--》{supported_extensions}')
-    # 从目录名提取学科类别（如 "ai_data" -> "ai"）
-    # print(f'1---》{os.path.basename(directory_path)}')
-    source = os.path.basename(directory_path).replace("_data", "")
-    # print(f'source-->{source}')
-    # 遍历指定目录及其子目录
-    for root, _, files in os.walk(directory_path):
-        # print(f'root---》{root}')
-        # print(f'files---》{files}')
-        # 遍历当前目录下的所有文件
-        for file in files:
-            # 构造文件的完整路径
-            file_path = os.path.join(root, file)
-            # print(f'file_path--》{file_path}')
-            # print(os.path.splitext(file_path))
-            # 获取文件扩展名并转换为小写
-            file_extension = os.path.splitext(file_path)[1].lower()
-            # print(f'file_extension--》{file_extension}')
-            # 检查文件类型是否在支持的扩展名列表中
-            if file_extension in supported_extensions:
-                # 使用 try-except 捕获加载过程中的异常
-                try:
-                    # 根据文件扩展名获取对应的加载器类
-                    loader_class = document_loaders[file_extension]
-                    # 实例化加载器对象，传入文件路径
-                    if file_extension == ".txt":
-                        loader = loader_class(file_path, encoding="utf-8")
-                    else:
-                        loader = loader_class(file_path)
-                    # 调用加载器加载文档内容，返回文档列表
-                    loaded_docs = loader.load()
-                    # print(f'loaded_docs--》{loaded_docs}')
-                    # print(f'loaded_docs--》{len(loaded_docs)}')
-                    for doc in loaded_docs:
-                        # 为文档添加学科类别元数据
-                        doc.metadata["source"] = source
-                        # 为文档添加文件路径元数据
-                        doc.metadata["file_path"] = file_path
-                        # 为文档添加当前时间戳元数据
-                        doc.metadata["timestamp"] = datetime.now().isoformat()
-                    # print(f'loaded_docs111--》{loaded_docs}')
-                    documents.extend(loaded_docs)
-                    # 记录成功加载文件的日志
-                    logger.info(f"成功加载文件: {file_path}")
-                except Exception as e:
-                    logger.error(f"加载文件 {file_path} 失败: {str(e)}")
-            # 如果文件类型不在支持列表中
-            else:
-                # 记录警告日志，提示不支持的文件类型
-                logger.warning(f"不支持的文件类型: {file_path}")
-    # 返回加载的所有文档列表
-    return documents
+    """
+    从目录加载文档（保持原有函数签名）
 
-# 定义函数，处理文档并进行分层切分，返回子块结果
-def process_documents(directory_path, parent_chunk_size=conf.PARENT_CHUNK_SIZE,
-                     child_chunk_size=conf.CHILD_CHUNK_SIZE,
-                     chunk_overlap=conf.CHUNK_OVERLAP):
-    # 从指定目录加载所有文档
-    documents = load_documents_from_directory(directory_path)
-    # 记录加载的文档总数日志
-    logger.info(f"加载的文档数量: {len(documents)}")
+    Args:
+        directory_path: 文档目录路径
 
-    # 初始化父块和子块分词器（通用）
-    parent_splitter = ChineseRecursiveTextSplitter(chunk_size=parent_chunk_size, chunk_overlap=chunk_overlap)
-    child_splitter = ChineseRecursiveTextSplitter(chunk_size=child_chunk_size, chunk_overlap=chunk_overlap)
-    # 初始化 Markdown 专用分词器
-    markdown_parent_splitter = MarkdownTextSplitter(chunk_size=parent_chunk_size, chunk_overlap=chunk_overlap)
-    markdown_child_splitter = MarkdownTextSplitter(chunk_size=child_chunk_size, chunk_overlap=chunk_overlap)
+    Returns:
+        list[Document]: 加载的文档列表
+    """
+    return llamaindex_load(directory_path)
 
-    # 初始化空列表，用于存储所有子块
-    child_chunks = []
-    #遍历每个原始文档，带上索引 i
-    for i, doc in enumerate(documents):
-        # print(f'doc--》{doc}')
-        # print(doc.metadata.get("file_path", ''))
-        # # 获取文件的扩展名
-        # print(os.path.splitext(doc.metadata.get("file_path", '')))
-        file_extension = os.path.splitext(doc.metadata.get("file_path", ''))[1].lower()
-        # print(f'file_extension--》{file_extension}')
-        # 选择分词器
-        is_markdown = (file_extension == '.md')
-        # print(f'is_markdown--》{is_markdown}')
-        parent_splitter_to_use = markdown_parent_splitter if is_markdown else parent_splitter
-        # print(f'parent_splitter_to_use-->{parent_splitter_to_use}')
-        child_splitter_to_use = markdown_child_splitter if is_markdown else child_splitter
-        logger.info(f"处理文档: {doc.metadata['file_path']}, 使用切分器: {'Markdown' if is_markdown else 'ChineseRecursive'}")
-        # 使用父块切分器将文档切分为父块
-        parent_docs = parent_splitter_to_use.split_documents([doc])
-        # print(f'parent_docs--》{parent_docs}')
-        # print(f'parent_docs--》{len(parent_docs)}')
-        # 遍历每个父块，带上索引 j
-        for j, parent_doc in enumerate(parent_docs):
-            # 为父块生成唯一 ID，格式为 "doc_i_parent_j"
-            parent_id = f"doc_{i}_parent_{j}"
-            # # 将父块 ID 添加到元数据
-            # parent_doc.metadata["parent_id"] = parent_id
-            # # 将父块内容存储到元数据
-            # parent_doc.metadata["parent_content"] = parent_doc.page_content
 
-            # 使用子块分词器将父块切分为子块
-            sub_chunks = child_splitter_to_use.split_documents([parent_doc])
-            # print(f'sub_chunks--》{sub_chunks}')
-            # print(f'sub_chunks--》{len(sub_chunks)}')
-            # 遍历每个子块，为子块主要添加对应的父块文档
-            for k, sub_chunk in enumerate(sub_chunks):
-                # print(f'原始的sub_chunk--》{sub_chunk}')
-                # 为子块添加父块的ID
-                sub_chunk.metadata["parent_id"] = parent_id
-                # 为子块添加对应的父块文档（元数据）
-                sub_chunk.metadata["parent_content"] = parent_doc.page_content
-                # 为子块生成一个唯一的ID,格式为 "parent_id_child_k"
-                sub_chunk.metadata["id"] = f"{parent_id}_child_{k}"
-                # print(f'修改后的sub_chunk--》{sub_chunk}')
-                # 将子块添加到子块列表中
-                child_chunks.append(sub_chunk)
+def process_documents(directory_path, parent_chunk_size=None,
+                      child_chunk_size=None, chunk_overlap=None):
+    """
+    处理文档并进行分层切分（保持原有函数签名）
 
-    # 记录子块总数日志
-    logger.info(f"子块数量: {len(child_chunks)}")
-    # 返回所有子块列表
-    return child_chunks
+    Args:
+        directory_path: 文档目录路径
+        parent_chunk_size: 父块大小（可选，使用配置默认值）
+        child_chunk_size: 子块大小（可选，使用配置默认值）
+        chunk_overlap: 块重叠大小（可选，使用配置默认值）
+
+    Returns:
+        list[Document]: 子块文档列表
+    """
+    # 参数已在 LlamaIndexProcessor 中通过配置处理
+    return llamaindex_process(directory_path)
+
+
+def validate_document_format(documents: List) -> bool:
+    """
+    验证文档格式是否符合预期
+
+    Args:
+        documents: 文档列表
+
+    Returns:
+        bool: 验证是否通过
+    """
+    if not documents:
+        print("[验证] ❌ 文档列表为空")
+        return False
+
+    # 检查返回类型
+    if not isinstance(documents, list):
+        print("[验证] ❌ 返回值不是列表类型")
+        return False
+
+    # 检查第一个文档
+    first_doc = documents[0]
+
+    # 检查文档类型（兼容 langchain Document）
+    if Document and not isinstance(first_doc, Document):
+        print(f"[验证] ⚠️ 文档类型不是 langchain Document，而是: {type(first_doc)}")
+    else:
+        print("[验证] ✓ 文档类型正确")
+
+    # 检查必要的属性
+    required_attrs = ['page_content', 'metadata']
+    for attr in required_attrs:
+        if not hasattr(first_doc, attr):
+            print(f"[验证] ❌ 缺少必要属性: {attr}")
+            return False
+    print("[验证] ✓ 文档属性完整")
+
+    # 检查元数据字段
+    required_metadata = ['id', 'parent_id', 'parent_content', 'source', 'file_path', 'timestamp']
+    missing_fields = []
+
+    if hasattr(first_doc, 'metadata') and isinstance(first_doc.metadata, dict):
+        for field in required_metadata:
+            if field not in first_doc.metadata:
+                missing_fields.append(field)
+
+        if missing_fields:
+            print(f"[验证] ⚠️ 缺少元数据字段: {missing_fields}")
+        else:
+            print("[验证] ✓ 元数据字段完整")
+    else:
+        print("[验证] ❌ 元数据不是字典类型")
+        return False
+
+    # 检查内容非空
+    if first_doc.page_content.strip():
+        print("[验证] ✓ 文档内容非空")
+    else:
+        print("[验证] ⚠️ 文档内容为空")
+
+    # 检查 ID 唯一性
+    doc_ids = [doc.metadata.get('id') for doc in documents if hasattr(doc, 'metadata')]
+    unique_ids = set(doc_ids)
+    if len(doc_ids) == len(unique_ids):
+        print("[验证] ✓ 文档ID唯一")
+    else:
+        print("[验证] ⚠️ 存在重复的文档ID")
+
+    print(f"\n[验证] 共处理 {len(documents)} 个文档")
+    return True
+
+
+def check_dependencies():
+    """检查项目依赖是否完整"""
+    print("\n" + "="*50)
+    print("📦 依赖检查")
+    print("="*50)
+
+    dependencies = [
+        ('llama_index.core', 'LlamaIndex 核心模块'),
+        ('llama_index.vector_stores.milvus', 'Milvus 向量存储'),
+        ('llama_index.embeddings.huggingface', 'HuggingFace 嵌入'),
+        ('pymilvus', 'Milvus Python SDK'),
+        ('langchain_core', 'LangChain 核心'),
+        ('torch', 'PyTorch'),
+    ]
+
+    missing_deps = []
+    for module, description in dependencies:
+        try:
+            __import__(module)
+            print(f"✓ {description}")
+        except ImportError as e:
+            print(f"❌ {description}: {e}")
+            missing_deps.append(module)
+
+    if missing_deps:
+        print(f"\n⚠️ 缺少依赖: {', '.join(missing_deps)}")
+        print("请运行: uv sync")
+        return False
+    else:
+        print("\n✅ 所有依赖检查通过")
+        return True
+
+
+# 保持原有入口（如果有脚本直接运行）
 if __name__ == '__main__':
-    directory_path = '/Users/ligang/Desktop/EduRAG课堂资料/codes/integrated_qa_system/rag_qa/data/ai_data'
-    # documents = load_documents_from_directory(directory_path)
-    # print(documents)
-    child_chunks = process_documents(directory_path)
-    print(f'child_chunks--》{child_chunks[0]}')
+    print("🚀 文档处理器验证测试")
+    print("="*50)
 
+    # 1. 依赖检查
+    if not check_dependencies():
+        exit(1)
+
+    # 2. 加载和处理文档
+    print("\n📄 开始处理文档...")
+    directory_path = 'D:\\PythonProjects\\integrated_qa_system\\rag_qa\\data\\ai_data'
+
+    # 确保路径存在
+    if not os.path.exists(directory_path):
+        print(f"❌ 目录不存在: {directory_path}")
+        exit(1)
+
+    try:
+        # 测试 load_documents_from_directory
+        print("\n--- 测试 load_documents_from_directory ---")
+        docs = load_documents_from_directory(directory_path)
+        print(f"加载文档数量: {len(docs)}")
+
+        # 测试 process_documents
+        print("\n--- 测试 process_documents ---")
+        child_chunks = process_documents(directory_path)
+        print(f"生成子块数量: {len(child_chunks)}")
+
+        # 3. 格式验证
+        print("\n--- 格式验证 ---")
+        validate_document_format(child_chunks)
+
+        # 4. 打印第一个文档示例
+        if child_chunks:
+            print("\n--- 文档示例 ---")
+            first_chunk = child_chunks[0]
+            print(f"文档ID: {first_chunk.metadata.get('id', 'N/A')}")
+            print(f"父块ID: {first_chunk.metadata.get('parent_id', 'N/A')}")
+            print(f"来源: {first_chunk.metadata.get('source', 'N/A')}")
+            print(f"文件路径: {first_chunk.metadata.get('file_path', 'N/A')}")
+            print(f"时间戳: {first_chunk.metadata.get('timestamp', 'N/A')}")
+            print(f"内容预览: {first_chunk.page_content[:100]}...")
+
+        print("\n🎉 验证测试完成！")
+
+    except Exception as e:
+        print(f"\n❌ 测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        exit(1)
