@@ -7,7 +7,7 @@
 .vscode/
 *.swp
 *.swo
-
+.iml
 # ========== 日志文件 ==========
 *.log
 logs/
