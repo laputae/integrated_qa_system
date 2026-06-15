@@ -16,7 +16,9 @@ except ImportError:
 from llamaindex_processor import (
     LlamaIndexProcessor,
     load_documents_from_directory as llamaindex_load,
-    process_documents as llamaindex_process
+    process_documents as llamaindex_process,
+    estimate_document_quality,
+    LOW_QUALITY_THRESHOLD,
 )
 
 # 保持原有全局变量（如果其他模块引用）
