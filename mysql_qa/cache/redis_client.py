@@ -76,6 +76,36 @@ class RedisClient:
             self.logger.error(f"Redis 查询失败: {e}")
             # 返回 None
             return None
+
+    # ========== Token 黑名单 ==========
+    def blacklist_token(self, jti: str, ttl: int):
+        try:
+            self.client.setex(f"blacklist:{jti}", ttl, "1")
+            self.logger.info(f"Token 已加入黑名单: {jti}")
+        except redis.RedisError as e:
+            self.logger.error(f"Token 黑名单操作失败: {e}")
+
+    def is_token_blacklisted(self, jti: str) -> bool:
+        try:
+            return self.client.exists(f"blacklist:{jti}") == 1
+        except redis.RedisError as e:
+            self.logger.error(f"Token 黑名单检查失败: {e}")
+            return False
+
+    # ========== 限流计数 ==========
+    def increment_rate_limit(self, key: str, window_seconds: int) -> int:
+        try:
+            count = self.client.incr(key)
+            if count == 1:
+                self.client.expire(key, window_seconds)
+            return count
+        except redis.RedisError as e:
+            self.logger.error(f"限流计数失败: {e}")
+            return 0
+
+    def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
+        count = self.increment_rate_limit(key, window_seconds)
+        return count <= limit
 if __name__ == '__main__':
     redcli = RedisClient()
     # print(redcli)

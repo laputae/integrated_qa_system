@@ -4,26 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>传智教育EduRAG智慧问答系统</title>
-    <!-- 引入 Font Awesome 图标库 -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
-    <!-- 引入 marked.js 用于解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
-            --primary-color: #4a6fa5; /* 主要颜色 */
-            --secondary-color: #6c757d; /* 次要颜色 */
-            --accent-color: #61dafb; /* 强调颜色 */
-            --bg-color: #f8f9fa; /* 背景颜色 */
-            --text-color: #343a40; /* 文本颜色 */
-            --border-color: #dee2e6; /* 边框颜色 */
-            --hover-color: #e9ecef; /* 悬停颜色 */
+            --primary-color: #4a6fa5;
+            --secondary-color: #6c757d;
+            --accent-color: #61dafb;
+            --bg-color: #f8f9fa;
+            --text-color: #343a40;
+            --border-color: #dee2e6;
+            --hover-color: #e9ecef;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -35,13 +29,194 @@
             height: 100vh;
         }
 
+        /* ====== Auth View ====== */
+        .auth-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex: 1;
+            background: #ffffff;
+        }
+
+        .auth-box {
+            background: white;
+            padding: 3rem 2.5rem 2.5rem;
+            border-radius: 0;
+            box-shadow: none;
+            width: 400px;
+            max-width: 90%;
+        }
+
+        .auth-box .logo {
+            text-align: center;
+            margin-bottom: 2.5rem;
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #1d1d1f;
+            letter-spacing: 0.5px;
+        }
+
+        .auth-tabs {
+            display: flex;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid #e8e8e8;
+        }
+
+        .auth-tab {
+            flex: 1;
+            text-align: center;
+            padding: 0.6rem 0;
+            cursor: pointer;
+            font-size: 0.95rem;
+            color: #999;
+            border-bottom: 2px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+            background: none;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+        }
+
+        .auth-tab.active {
+            color: #1d1d1f;
+            font-weight: 500;
+            border-bottom-color: #3370ff;
+        }
+
+        .auth-tab:hover { color: #1d1d1f; }
+
+        .auth-form { display: none; }
+        .auth-form.active { display: block; }
+
+        .auth-box .subtitle {
+            text-align: center;
+            color: #999;
+            margin-bottom: 1.5rem;
+            font-size: 0.85rem;
+        }
+
+        .auth-box .input-wrapper {
+            margin-bottom: 1.25rem;
+            position: relative;
+        }
+
+        .auth-box .input-wrapper .input-icon {
+            position: absolute;
+            left: 0;
+            top: 0.75rem;
+            color: #bbb;
+            font-size: 0.95rem;
+            pointer-events: none;
+        }
+
+        .auth-box input[type="text"],
+        .auth-box input[type="password"] {
+            width: 100%;
+            padding: 0.75rem 0 0.75rem 1.6rem;
+            margin-bottom: 0;
+            border: none;
+            border-bottom: 1px solid #e8e8e8;
+            border-radius: 0;
+            font-size: 0.95rem;
+            background: transparent;
+            transition: border-color 0.2s;
+            outline: none;
+        }
+
+        .auth-box input:focus {
+            border-bottom-color: #3370ff;
+        }
+
+        .auth-box input::placeholder { color: #ccc; }
+
+        .auth-box .remember-row {
+            display: flex;
+            align-items: center;
+            margin: 1.5rem 0;
+        }
+
+        .auth-box .remember-row input[type="checkbox"] {
+            accent-color: #3370ff;
+        }
+
+        .auth-box .remember-row label {
+            margin-bottom: 0;
+            margin-left: 0.4rem;
+            font-weight: normal;
+            font-size: 0.85rem;
+            color: #999;
+        }
+
+        .auth-buttons { margin-top: 0.5rem; }
+
+        .auth-buttons button {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .btn-login {
+            background-color: #3370ff;
+            color: white;
+        }
+
+        .btn-login:hover { background-color: #2860e1; }
+
+        .btn-login:active { background-color: #1e4fd6; }
+
+        .auth-error {
+            color: #f54a45;
+            text-align: center;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            min-height: 1.2rem;
+        }
+
+        .auth-tip {
+            text-align: center;
+            margin-top: 1rem;
+            color: #999;
+            font-size: 0.8rem;
+        }
+
+        /* ====== Main View ====== */
         header {
             background-color: var(--primary-color);
             color: white;
-            padding: 1rem;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 0.6rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
+
+        header h1 { font-size: 1.3rem; }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-info .welcome { font-size: 0.9rem; }
+
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.4);
+            padding: 0.35rem 0.9rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background-color 0.2s;
+        }
+
+        .logout-btn:hover { background: rgba(255,255,255,0.35); }
 
         .container {
             max-width: 1200px;
@@ -50,20 +225,21 @@
             display: flex;
             flex: 1;
             flex-direction: column;
+            width: 100%;
         }
 
         .chat-container {
             display: flex;
-            height: calc(100vh - 180px);
+            height: calc(100vh - 130px);
             border: 1px solid var(--border-color);
             border-radius: 8px;
             overflow: hidden;
             background-color: white;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
         .sidebar {
-            width: 250px;
+            width: 260px;
             background-color: #f1f3f5;
             padding: 1rem;
             border-right: 1px solid var(--border-color);
@@ -106,9 +282,7 @@
             border: 1px solid var(--border-color);
         }
 
-        .input-group {
-            display: flex;
-        }
+        .input-group { display: flex; }
 
         .chat-input {
             flex: 1;
@@ -122,10 +296,7 @@
             overflow-y: auto;
         }
 
-        .chat-input:focus {
-            outline: none;
-            border-color: var(--primary-color);
-        }
+        .chat-input:focus { outline: none; border-color: var(--primary-color); }
 
         .send-btn {
             background-color: var(--primary-color);
@@ -138,20 +309,10 @@
             transition: background-color 0.2s;
         }
 
-        .send-btn:hover {
-            background-color: #3a5a8c;
-        }
+        .send-btn:hover { background-color: #3a5a8c; }
+        .send-btn:disabled { background-color: var(--secondary-color); cursor: not-allowed; }
 
-        .send-btn:disabled {
-            background-color: var(--secondary-color);
-            cursor: not-allowed;
-        }
-
-        .message {
-            margin-bottom: 1rem;
-            display: flex;
-            flex-direction: column;
-        }
+        .message { margin-bottom: 1rem; display: flex; flex-direction: column; }
 
         .message-content {
             padding: 0.75rem 1rem;
@@ -160,26 +321,19 @@
             word-break: break-word;
         }
 
-        .user-message {
-            align-self: flex-end;
-        }
-
+        .user-message { align-self: flex-end; }
         .user-message .message-content {
             background-color: var(--primary-color);
             color: white;
             align-self: flex-end;
         }
 
-        .system-message {
-            align-self: flex-start;
-        }
-
+        .system-message { align-self: flex-start; }
         .system-message .message-content {
             background-color: #e9ecef;
             align-self: flex-start;
         }
 
-        /* 代码块样式 */
         .message-content pre {
             background-color: #f4f4f4;
             padding: 1rem;
@@ -210,22 +364,12 @@
             animation: typing 1s infinite;
         }
 
-        .typing-indicator span:nth-child(2) {
-            animation-delay: 0.2s;
-        }
-
-        .typing-indicator span:nth-child(3) {
-            animation-delay: 0.4s;
-            margin-right: 0;
-        }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; margin-right: 0; }
 
         @keyframes typing {
-            0%, 100% {
-                transform: translateY(0);
-            }
-            50% {
-                transform: translateY(-5px);
-            }
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
         }
 
         .session-controls {
@@ -245,9 +389,7 @@
             transition: background-color 0.2s;
         }
 
-        .new-session-btn:hover, .clear-history-btn:hover {
-            background-color: #5a6268;
-        }
+        .new-session-btn:hover, .clear-history-btn:hover { background-color: #5a6268; }
 
         .session-info {
             font-size: 0.9rem;
@@ -261,10 +403,7 @@
             color: var(--primary-color);
         }
 
-        .history-list {
-            flex: 1;
-            overflow-y: auto;
-        }
+        .history-list { flex: 1; overflow-y: auto; }
 
         .history-item {
             padding: 0.75rem;
@@ -273,9 +412,7 @@
             transition: background-color 0.2s;
         }
 
-        .history-item:hover {
-            background-color: var(--hover-color);
-        }
+        .history-item:hover { background-color: var(--hover-color); }
 
         .history-question {
             font-weight: bold;
@@ -294,11 +431,8 @@
 
         .loading-overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(255, 255, 255, 0.8);
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255,255,255,0.8);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -309,7 +443,7 @@
         .spinner {
             width: 40px;
             height: 40px;
-            border: 4px solid rgba(0, 0, 0, 0.1);
+            border: 4px solid rgba(0,0,0,0.1);
             border-radius: 50%;
             border-left-color: var(--primary-color);
             animation: spin 1s linear infinite;
@@ -320,30 +454,72 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* 响应式设计 */
         @media (max-width: 768px) {
-            .chat-container {
-                flex-direction: column;
-            }
-
-            .sidebar {
-                width: 100%;
-                border-right: none;
-                border-bottom: 1px solid var(--border-color);
-                max-height: 200px;
-            }
+            .chat-container { flex-direction: column; }
+            .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border-color); max-height: 200px; }
         }
     </style>
 </head>
 <body>
+
+<!-- ====== Auth View ====== -->
+<div id="authView" class="auth-container">
+    <div class="auth-box">
+        <div class="logo">传智教育EduRAG</div>
+        <div class="auth-tabs">
+            <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">登录</button>
+            <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">注册</button>
+        </div>
+        <div class="auth-form active" id="formLogin">
+            <div class="input-wrapper">
+                <i class="fas fa-user input-icon"></i>
+                <input type="text" id="loginUsername" placeholder="请输入用户名" autocomplete="username">
+            </div>
+            <div class="input-wrapper">
+                <i class="fas fa-lock input-icon"></i>
+                <input type="password" id="loginPassword" placeholder="请输入密码" autocomplete="current-password">
+            </div>
+            <div class="remember-row">
+                <input type="checkbox" id="rememberMe">
+                <label for="rememberMe">记住密码</label>
+            </div>
+            <div class="auth-buttons">
+                <button class="btn-login" onclick="handleLogin()">登 录</button>
+            </div>
+        </div>
+        <div class="auth-form" id="formRegister">
+            <div class="input-wrapper">
+                <i class="fas fa-user input-icon"></i>
+                <input type="text" id="registerUsername" placeholder="请输入用户名（3-50个字符）" autocomplete="username">
+            </div>
+            <div class="input-wrapper">
+                <i class="fas fa-lock input-icon"></i>
+                <input type="password" id="registerPassword" placeholder="请输入密码（6-128个字符）" autocomplete="new-password">
+            </div>
+            <div class="auth-buttons" style="margin-top:1.5rem;">
+                <button class="btn-login" onclick="handleRegister()">注 册</button>
+            </div>
+            <p class="auth-tip">注册成功即自动登录</p>
+        </div>
+        <div class="auth-error" id="authError"></div>
+    </div>
+</div>
+
+<!-- ====== Main View ====== -->
+<div id="mainView" style="display:none;">
     <header>
         <h1>传智教育EduRAG智慧问答系统</h1>
+        <div class="user-info">
+            <span class="welcome" id="welcomeMsg">欢迎</span>
+            <button class="logout-btn" onclick="handleLogout()">
+                <i class="fas fa-sign-out-alt"></i> 退出
+            </button>
+        </div>
     </header>
 
     <div class="container">
         <div class="chat-container">
             <div class="sidebar">
-                <!-- 会话控制按钮 -->
                 <div class="session-controls">
                     <button class="new-session-btn" id="newSessionBtn">
                         <i class="fas fa-plus"></i> 新会话
@@ -353,15 +529,12 @@
                     </button>
                 </div>
                 <div class="history-title">历史会话</div>
-                <div class="history-list" id="historyList">
-                    <!-- 历史会话将动态添加到这里 -->
-                </div>
+                <div class="history-list" id="historyList"></div>
                 <div class="session-info" id="sessionInfo"></div>
             </div>
 
             <div class="main-content">
                 <div class="chat-history" id="chatHistory">
-                    <!-- 消息将动态添加到这里 -->
                     <div class="message system-message">
                         <div class="message-content">
                             您好！我是智能问答助手，有什么我可以帮您的吗？
@@ -374,7 +547,6 @@
                         <label for="sourceFilter">学科类别：</label>
                         <select id="sourceFilter">
                             <option value="">全部</option>
-                            <!-- 学科类别选项将动态添加 -->
                         </select>
                     </div>
                     <div class="input-group">
@@ -392,385 +564,445 @@
             </div>
         </div>
     </div>
+</div>
 
-    <script>
-        // 全局变量
-        let currentSessionId = null; // 当前会话 ID
-        let isResponseInProgress = false; // 是否正在处理响应
-        let socket = null; // WebSocket 连接
+<script>
+// ========== AuthManager ==========
+const AuthManager = {
+    saveToken(accessToken, refreshToken, username, remember) {
+        const storage = remember ? localStorage : sessionStorage;
+        storage.setItem('access_token', accessToken);
+        storage.setItem('refresh_token', refreshToken);
+        storage.setItem('username', username);
+    },
 
-        // DOM 元素
-        const chatHistory = document.getElementById('chatHistory'); // 聊天历史容器
-        const chatInput = document.getElementById('chatInput'); // 输入框
-        const sendBtn = document.getElementById('sendBtn'); // 发送按钮
-        const sourceFilter = document.getElementById('sourceFilter'); // 学科过滤器
-        const historyList = document.getElementById('historyList'); // 历史列表
-        const sessionInfo = document.getElementById('sessionInfo'); // 会话信息
-        const newSessionBtn = document.getElementById('newSessionBtn'); // 新会话按钮
-        const clearHistoryBtn = document.getElementById('clearHistoryBtn'); // 清除历史按钮
-        const loadingOverlay = document.getElementById('loadingOverlay'); // 加载遮罩
-
-        // API URL 前缀，根据部署环境调整
-        const API_BASE_URL = ''; // 如果 API 和前端在同一域，可以留空
-
-        // 页面加载完成后执行
-        document.addEventListener('DOMContentLoaded', async () => {
-            // 创建新会话
-            await createNewSession();
-
-            // 加载学科类别
-            await loadSources();
-
-            // 事件监听器
-            sendBtn.addEventListener('click', sendMessage); // 发送按钮点击事件
-            chatInput.addEventListener('keydown', (e) => { // 输入框键盘事件
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            });
-
-            newSessionBtn.addEventListener('click', createNewSession); // 新会话按钮点击事件
-            clearHistoryBtn.addEventListener('click', clearHistory); // 清除历史按钮点击事件
+    clearToken() {
+        [localStorage, sessionStorage].forEach(s => {
+            s.removeItem('access_token');
+            s.removeItem('refresh_token');
+            s.removeItem('username');
         });
-
-        // 创建新会话
-        async function createNewSession() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/create_session`, {
-                    method: 'POST'
-                });
-
-                if (!response.ok) {
-                    throw new Error('创建会话失败');
-                }
-
-                const data = await response.json();
-                currentSessionId = data.session_id; // 更新当前会话 ID
-
-                // 更新会话信息
-                sessionInfo.textContent = `会话ID: ${currentSessionId.slice(0, 8)}...`;
-
-                // 清空聊天历史
-                clearChatHistory();
-
-                // 加载会话历史
-                await loadHistory();
-
-            } catch (error) {
-                console.error('创建会话错误:', error);
-                alert('创建会话失败，请刷新页面重试');
-            }
-        }
-
-        // 加载学科类别
-        async function loadSources() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/sources`);
-
-                if (!response.ok) {
-                    throw new Error('获取学科类别失败');
-                }
-
-                const data = await response.json();
-
-                // 清空现有选项
-                sourceFilter.innerHTML = '<option value="">全部</option>';
-
-                // 添加学科类别选项
-                data.sources.forEach(source => {
-                    const option = document.createElement('option');
-                    option.value = source;
-                    option.textContent = source;
-                    sourceFilter.appendChild(option);
-                });
-
-            } catch (error) {
-                console.error('加载学科类别错误:', error);
-            }
-        }
-
-        // 加载历史消息（支持多轮 QA）
-        async function loadHistory() {
-            if (!currentSessionId) return;
-
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/history/${currentSessionId}`);
-
-                if (!response.ok) {
-                    throw new Error('获取历史记录失败');
-                }
-
-                const data = await response.json();
-
-                // 清空历史列表
-                historyList.innerHTML = '';
-
-                // 将历史记录按会话分组（每组最多 10 轮）
-                const sessionItem = document.createElement('div');
-                sessionItem.className = 'history-item';
-                sessionItem.innerHTML = `
-                    <div class="history-question">会话 ${currentSessionId.slice(0, 8)}...</div>
-                    <div class="history-answer">共 ${data.history.length} 轮对话</div>
-                `;
-
-                // 点击历史记录项显示整个会话
-                sessionItem.addEventListener('click', () => {
-                    // 清空现有聊天记录
-                    clearChatHistory();
-
-                    // 添加整个会话的 QA 对
-                    data.history.forEach(item => {
-                        addMessage('user', item.question); // 添加用户问题
-                        addMessage('system', item.answer); // 添加系统回答
-                    });
-
-                    // 滚动到底部
-                    scrollToBottom();
-                });
-
-                historyList.appendChild(sessionItem);
-
-            } catch (error) {
-                console.error('加载历史记录错误:', error);
-            }
-        }
-
-        // 清除历史记录
-        async function clearHistory() {
-            if (!currentSessionId) return;
-
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/history/${currentSessionId}`, {
-                    method: 'DELETE'
-                });
-
-                if (!response.ok) {
-                    throw new Error('清除历史记录失败');
-                }
-
-                // 清空历史列表
-                historyList.innerHTML = '';
-
-                // 清空聊天历史
-                clearChatHistory();
-
-                // 添加欢迎消息
-                chatHistory.innerHTML = `
-                    <div class="message system-message">
-                        <div class="message-content">
-                            历史记录已清除，有什么我可以帮您的吗？
-                        </div>
-                    </div>
-                `;
-
-            } catch (error) {
-                console.error('清除历史记录错误:', error);
-                alert('清除历史记录失败');
-            }
-        }
-
-        // 清空聊天历史
-        function clearChatHistory() {
-            chatHistory.innerHTML = `
-                <div class="message system-message">
-                    <div class="message-content">
-                        您好！我是智能问答助手，有什么我可以帮您的吗？
-                    </div>
-                </div>
-            `;
-        }
-
-        // 发送消息
-        async function sendMessage() {
-            const query = chatInput.value.trim();
-            const filter = sourceFilter.value;
-
-            if (!query || isResponseInProgress) return;
-
-            // 重置输入框
-            chatInput.value = '';
-            chatInput.style.height = 'auto';
-
-            // 添加用户消息到聊天窗口
-            addMessage('user', query);
-
-            // 设置正在响应标志
-            isResponseInProgress = true;
-
-            // 添加正在输入指示器
-            const typingIndicator = document.createElement('div');
-            typingIndicator.className = 'typing-indicator';
-            typingIndicator.innerHTML = '<span></span><span></span><span></span>';
-            chatHistory.appendChild(typingIndicator);
-
-            // 滚动到底部
-            scrollToBottom();
-
-            try {
-                // 发送查询请求
-                const response = await fetch(`${API_BASE_URL}/api/query`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        query: query,
-                        source_filter: filter,
-                        session_id: currentSessionId
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error('查询失败');
-                }
-
-                const data = await response.json();
-
-                // 移除输入指示器
-                if (typingIndicator.parentNode) {
-                    chatHistory.removeChild(typingIndicator);
-                }
-
-                // 如果需要流式输出，使用 WebSocket
-                if (data.is_streaming) {
-                    // 创建系统消息容器，但内容为空
-                    const messageElement = document.createElement('div');
-                    messageElement.className = 'message system-message';
-
-                    const contentElement = document.createElement('div');
-                    contentElement.className = 'message-content';
-                    contentElement.innerHTML = ''; // 初始化为空
-
-                    messageElement.appendChild(contentElement);
-                    chatHistory.appendChild(messageElement);
-
-                    // 建立 WebSocket 连接进行流式输出
-                    await handleStreamingResponse(query, filter, contentElement);
-                } else {
-                    // 直接添加格式化后的答案
-                    addMessage('system', data.answer);
-                }
-
-                // 重新加载历史记录
-                await loadHistory();
-
-            } catch (error) {
-                console.error('发送消息错误:', error);
-
-                // 移除输入指示器
-                if (typingIndicator.parentNode) {
-                    chatHistory.removeChild(typingIndicator);
-                }
-
-                // 添加错误消息
-                addMessage('system', `抱歉，发生错误: ${error.message}`);
-            } finally {
-                // 清除正在响应标志
-                isResponseInProgress = false;
-
-                // 滚动到底部
-                scrollToBottom();
-            }
-        }
-
-        // 处理流式响应
-        async function handleStreamingResponse(query, filter, contentElement) {
-            // 关闭现有连接
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.close();
-            }
-
-            return new Promise((resolve, reject) => {
-                // WebSocket URL
-                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${wsProtocol}//${window.location.host}${API_BASE_URL}/api/stream`;
-
-                // 创建 WebSocket 连接
-                socket = new WebSocket(wsUrl);
-
-                let accumulatedContent = ''; // 累积流式内容
-
-                // 连接建立时
-                socket.onopen = function() {
-                    console.log('WebSocket 连接已建立');
-
-                    // 发送查询请求
-                    socket.send(JSON.stringify({
-                        query: query,
-                        source_filter: filter,
-                        session_id: currentSessionId
-                    }));
-                };
-
-                // 接收消息时
-                socket.onmessage = function(event) {
-                    const data = JSON.parse(event.data);
-
-                    switch (data.type) {
-                        case 'start':
-                            console.log('流式响应开始');
-                            break;
-
-                        case 'token':
-                            // 追加 token 到内容
-                            accumulatedContent += data.token;
-                            // 使用 marked.js 解析 Markdown 格式
-                            contentElement.innerHTML = marked.parse(accumulatedContent);
-                            scrollToBottom();
-                            break;
-
-                        case 'end':
-                            console.log('流式响应结束');
-                            socket.close();
-                            resolve();
-                            break;
-
-                        case 'error':
-                            console.error('流式响应错误:', data.error);
-                            contentElement.innerHTML += `<p>[错误: ${data.error}]</p>`;
-                            socket.close();
-                            reject(new Error(data.error));
-                            break;
-                    }
-                };
-
-                // 发生错误时
-                socket.onerror = function(error) {
-                    console.error('WebSocket 错误:', error);
-                    contentElement.innerHTML += '<p>[连接错误]</p>';
-                    reject(error);
-                };
-
-                // 连接关闭时
-                socket.onclose = function() {
-                    console.log('WebSocket 连接已关闭');
-                    resolve();
-                };
+    },
+
+    getAccessToken() {
+        return sessionStorage.getItem('access_token')
+            || localStorage.getItem('access_token');
+    },
+
+    getRefreshToken() {
+        return sessionStorage.getItem('refresh_token')
+            || localStorage.getItem('refresh_token');
+    },
+
+    getUsername() {
+        return sessionStorage.getItem('username')
+            || localStorage.getItem('username');
+    },
+
+    isTokenExpired(token) {
+        if (!token) return true;
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return (payload.exp * 1000) < Date.now();
+        } catch { return true; }
+    },
+
+    async refreshAccessToken() {
+        const refreshToken = this.getRefreshToken();
+        if (!refreshToken) return null;
+        try {
+            const resp = await fetch('/api/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken })
             });
+            if (!resp.ok) return null;
+            const data = await resp.json();
+            // Update all storages
+            [localStorage, sessionStorage].forEach(s => {
+                if (s.getItem('access_token')) s.setItem('access_token', data.access_token);
+                if (s.getItem('refresh_token')) s.setItem('refresh_token', data.refresh_token);
+            });
+            return data.access_token;
+        } catch { return null; }
+    }
+};
+
+// ========== authFetch ==========
+async function authFetch(url, options = {}) {
+    let token = AuthManager.getAccessToken();
+    if (AuthManager.isTokenExpired(token)) {
+        token = await AuthManager.refreshAccessToken();
+        if (!token) {
+            showAuthView();
+            throw new Error('令牌已过期，请重新登录');
         }
+    }
+    options.headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`
+    };
+    const resp = await fetch(url, options);
+    if (resp.status === 401) {
+        AuthManager.clearToken();
+        showAuthView();
+        throw new Error('认证失败，请重新登录');
+    }
+    return resp;
+}
 
-        // 添加消息到聊天窗口（支持 Markdown 格式）
-        function addMessage(type, content) {
+// ========== View Management ==========
+function showAuthView() {
+    document.getElementById('authView').style.display = 'flex';
+    document.getElementById('mainView').style.display = 'none';
+}
+
+function showMainView(username) {
+    document.getElementById('authView').style.display = 'none';
+    document.getElementById('mainView').style.display = '';
+    document.getElementById('welcomeMsg').textContent = `欢迎，${username}`;
+}
+
+// ========== Tab Switch ==========
+function switchAuthTab(tab) {
+    document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
+    document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
+    document.getElementById('formLogin').classList.toggle('active', tab === 'login');
+    document.getElementById('formRegister').classList.toggle('active', tab === 'register');
+    document.getElementById('authError').textContent = '';
+}
+
+// ========== Auth Handlers ==========
+async function handleLogin() {
+    const username = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const remember = document.getElementById('rememberMe').checked;
+    const errEl = document.getElementById('authError');
+
+    if (!username || !password) {
+        errEl.textContent = '请输入用户名和密码';
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            errEl.textContent = data.detail || '登录失败';
+            return;
+        }
+        AuthManager.saveToken(data.access_token, data.refresh_token, data.username, remember);
+        showMainView(data.username);
+        await initChat();
+    } catch (e) {
+        errEl.textContent = '网络错误，请重试';
+    }
+}
+
+async function handleRegister() {
+    const username = document.getElementById('registerUsername').value.trim();
+    const password = document.getElementById('registerPassword').value;
+    const remember = document.getElementById('rememberMe').checked;
+    const errEl = document.getElementById('authError');
+
+    if (!username || !password) {
+        errEl.textContent = '请输入用户名和密码';
+        return;
+    }
+    if (username.length < 3 || username.length > 50) {
+        errEl.textContent = '用户名长度需在3-50个字符之间';
+        return;
+    }
+    if (password.length < 6 || password.length > 128) {
+        errEl.textContent = '密码长度需在6-128个字符之间';
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            errEl.textContent = data.detail || '注册失败';
+            return;
+        }
+        AuthManager.saveToken(data.access_token, data.refresh_token, data.username, remember);
+        showMainView(data.username);
+        await initChat();
+    } catch (e) {
+        errEl.textContent = '网络错误，请重试';
+    }
+}
+
+async function handleLogout() {
+    const token = AuthManager.getAccessToken();
+    if (token) {
+        try {
+            await authFetch('/api/auth/logout', { method: 'POST' });
+        } catch {}
+    }
+    AuthManager.clearToken();
+    if (socket) { socket.close(); socket = null; }
+    showAuthView();
+}
+
+// Allow Enter key for login/register
+document.getElementById('loginPassword').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleLogin();
+});
+document.getElementById('registerPassword').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleRegister();
+});
+
+// ====== Chat State ======
+let currentSessionId = null;
+let isResponseInProgress = false;
+let socket = null;
+
+const chatHistory = document.getElementById('chatHistory');
+const chatInput = document.getElementById('chatInput');
+const sendBtn = document.getElementById('sendBtn');
+const sourceFilter = document.getElementById('sourceFilter');
+const historyList = document.getElementById('historyList');
+const sessionInfo = document.getElementById('sessionInfo');
+
+// ====== Init ======
+async function initChat() {
+    await createNewSession();
+    await loadSources();
+    await loadUserSessions();
+
+    sendBtn.addEventListener('click', sendMessage);
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    document.getElementById('newSessionBtn').addEventListener('click', createNewSession);
+    document.getElementById('clearHistoryBtn').addEventListener('click', clearHistory);
+}
+
+async function createNewSession() {
+    try {
+        const resp = await authFetch('/api/create_session', { method: 'POST' });
+        const data = await resp.json();
+        currentSessionId = data.session_id;
+        sessionInfo.textContent = `会话ID: ${currentSessionId.slice(0, 8)}...`;
+        clearChatHistory();
+        await loadUserSessions();
+    } catch (e) {
+        console.error('创建会话错误:', e);
+    }
+}
+
+async function loadSources() {
+    try {
+        const resp = await fetch('/api/sources');
+        const data = await resp.json();
+        sourceFilter.innerHTML = '<option value="">全部</option>';
+        data.sources.forEach(source => {
+            const opt = document.createElement('option');
+            opt.value = source;
+            opt.textContent = source;
+            sourceFilter.appendChild(opt);
+        });
+    } catch (e) {
+        console.error('加载学科类别错误:', e);
+    }
+}
+
+async function loadUserSessions() {
+    try {
+        const resp = await authFetch('/api/sessions');
+        const data = await resp.json();
+        historyList.innerHTML = '';
+        data.sessions.forEach(s => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.innerHTML = `<div class="history-question">会话 ${s.session_id.slice(0, 8)}...</div>
+                <div class="history-answer">共 ${s.count} 轮对话</div>`;
+            div.addEventListener('click', async () => {
+                currentSessionId = s.session_id;
+                sessionInfo.textContent = `会话ID: ${currentSessionId.slice(0, 8)}...`;
+                await loadHistory();
+            });
+            historyList.appendChild(div);
+        });
+    } catch (e) {
+        console.error('加载会话列表错误:', e);
+    }
+}
+
+async function loadHistory() {
+    if (!currentSessionId) return;
+    try {
+        const resp = await authFetch(`/api/history/${currentSessionId}`);
+        const data = await resp.json();
+        clearChatHistory();
+        data.history.forEach(item => {
+            addMessage('user', item.question);
+            addMessage('system', item.answer);
+        });
+        scrollToBottom();
+    } catch (e) {
+        console.error('加载历史记录错误:', e);
+    }
+}
+
+async function clearHistory() {
+    if (!currentSessionId) return;
+    try {
+        await authFetch(`/api/history/${currentSessionId}`, { method: 'DELETE' });
+        historyList.innerHTML = '';
+        clearChatHistory();
+        chatHistory.innerHTML = `<div class="message system-message"><div class="message-content">历史记录已清除，有什么我可以帮您的吗？</div></div>`;
+    } catch (e) {
+        console.error('清除历史记录错误:', e);
+    }
+}
+
+function clearChatHistory() {
+    chatHistory.innerHTML = `<div class="message system-message"><div class="message-content">您好！我是智能问答助手，有什么我可以帮您的吗？</div></div>`;
+}
+
+// ====== Send Message ======
+async function sendMessage() {
+    const query = chatInput.value.trim();
+    const filter = sourceFilter.value;
+    if (!query || isResponseInProgress) return;
+
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    addMessage('user', query);
+    isResponseInProgress = true;
+
+    const typingIndicator = document.createElement('div');
+    typingIndicator.className = 'typing-indicator';
+    typingIndicator.innerHTML = '<span></span><span></span><span></span>';
+    chatHistory.appendChild(typingIndicator);
+    scrollToBottom();
+
+    try {
+        const resp = await authFetch('/api/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, source_filter: filter, session_id: currentSessionId })
+        });
+        const data = await resp.json();
+
+        if (typingIndicator.parentNode) chatHistory.removeChild(typingIndicator);
+
+        if (data.is_streaming) {
             const messageElement = document.createElement('div');
-            messageElement.className = `message ${type === 'user' ? 'user-message' : 'system-message'}`;
-
+            messageElement.className = 'message system-message';
             const contentElement = document.createElement('div');
             contentElement.className = 'message-content';
-            // 使用 marked.js 解析 Markdown 格式（支持换行和代码块）
-            contentElement.innerHTML = marked.parse(content);
-
+            contentElement.innerHTML = '';
             messageElement.appendChild(contentElement);
             chatHistory.appendChild(messageElement);
-
-            // 滚动到底部
-            scrollToBottom();
+            await handleStreamingResponse(query, filter, contentElement);
+        } else {
+            addMessage('system', data.answer);
         }
+        await loadUserSessions();
+    } catch (e) {
+        console.error('发送消息错误:', e);
+        if (typingIndicator.parentNode) chatHistory.removeChild(typingIndicator);
+        addMessage('system', `抱歉，发生错误: ${e.message}`);
+    } finally {
+        isResponseInProgress = false;
+        scrollToBottom();
+    }
+}
 
-        // 滚动到底部
-        function scrollToBottom() {
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        }
-    </script>
+// ====== Streaming via WebSocket ======
+async function handleStreamingResponse(query, filter, contentElement) {
+    if (socket && socket.readyState === WebSocket.OPEN) socket.close();
+    return new Promise((resolve, reject) => {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const token = AuthManager.getAccessToken();
+        const wsUrl = `${wsProtocol}//${window.location.host}/api/stream?token=${encodeURIComponent(token)}`;
+        socket = new WebSocket(wsUrl);
+        let accumulatedContent = '';
+
+        socket.onopen = () => {
+            socket.send(JSON.stringify({ query, source_filter: filter, session_id: currentSessionId }));
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            switch (data.type) {
+                case 'start':
+                    break;
+                case 'token':
+                    accumulatedContent += data.token;
+                    contentElement.innerHTML = marked.parse(accumulatedContent);
+                    scrollToBottom();
+                    break;
+                case 'end':
+                    socket.close();
+                    resolve();
+                    break;
+                case 'error':
+                    contentElement.innerHTML += `<p>[错误: ${data.error}]</p>`;
+                    socket.close();
+                    reject(new Error(data.error));
+                    break;
+            }
+        };
+
+        socket.onerror = (error) => {
+            contentElement.innerHTML += '<p>[连接错误]</p>';
+            reject(error);
+        };
+
+        socket.onclose = () => resolve();
+    });
+}
+
+function addMessage(type, content) {
+    const messageElement = document.createElement('div');
+    messageElement.className = `message ${type === 'user' ? 'user-message' : 'system-message'}`;
+    const contentElement = document.createElement('div');
+    contentElement.className = 'message-content';
+    contentElement.innerHTML = marked.parse(content);
+    messageElement.appendChild(contentElement);
+    chatHistory.appendChild(messageElement);
+    scrollToBottom();
+}
+
+function scrollToBottom() {
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+// ====== Auto-login check ======
+(function() {
+    const username = AuthManager.getUsername();
+    const token = AuthManager.getAccessToken();
+    if (username && token && !AuthManager.isTokenExpired(token)) {
+        showMainView(username);
+        initChat();
+    } else if (username && AuthManager.getRefreshToken()) {
+        AuthManager.refreshAccessToken().then(newToken => {
+            if (newToken) {
+                showMainView(username);
+                initChat();
+            } else {
+                showAuthView();
+            }
+        });
+    } else {
+        showAuthView();
+    }
+})();
+</script>
 </body>
 </html>

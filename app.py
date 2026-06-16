@@ -1,5 +1,5 @@
 from fastapi import FastAPI, WebSocket, HTTPException, Query, Depends
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect
@@ -12,129 +12,299 @@ from typing import Optional, List, Dict, Any
 import time
 import re
 
-# 导入现有的系统
 from new_main import IntegratedQASystem
+from gateway.middleware import GatewayMiddleware
+from gateway.auth import (
+    create_access_token,
+    create_refresh_token,
+    decode_access_token,
+    decode_refresh_token,
+    hash_password,
+    verify_password,
+    get_token_jti,
+    get_token_ttl,
+)
+from gateway.security import SecurityFilter
+from gateway.deps import get_current_user, require_auth
+from gateway.audit import AuditLogger, AuditEventType, get_audit_logger
+from models.base import init_db, SessionLocal, Base, engine
+from repositories.user_repo import UserRepository
+from repositories.conversation_repo import ConversationRepository
+from mysql_qa import RedisClient
 
-# 创建应用实例
 app = FastAPI(title="问答系统API", description="集成MySQL和RAG的智能问答系统")
 
-# 配置CORS，允许前端访问
+app.add_middleware(GatewayMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 在生产环境中应该限制为特定域名
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 创建静态文件目录
 os.makedirs("static", exist_ok=True)
 
-# 创建全局QA系统实例
 qa_system = IntegratedQASystem()
 
-# 定义日常问候用语模式和回复
-GREETING_PATTERNS = [
-    {
-        "pattern": r"^(你好|您好|hi|hello)",
-        "response": "你好！我是黑马程序员，专注于为学生答疑解惑，很高兴为你服务！"
-    },
-    {
-        "pattern": r"^(你是谁|您是谁|你叫什么|你的名字|who are you)",
-        "response": "我是黑马程序员，你的智能学习助手，致力于提供 IT 教育相关的解答！"
-    },
-    {
-        "pattern": r"^(在吗|在不在|有人吗)",
-        "response": "我在！我是黑马程序员，随时为你解答问题！"
-    },
-    {
-        "pattern": r"^(干嘛呢|你在干嘛|做什么)",
-        "response": "我正在待命，随时为你解答 IT 学习相关的问题！有什么我可以帮你的？"
-    }
-]
+# ========== Pydantic Models ==========
 
-# 定义请求模型
 class QueryRequest(BaseModel):
     query: str
     source_filter: Optional[str] = None
     session_id: Optional[str] = None
 
-# 定义响应模型
 class QueryResponse(BaseModel):
     answer: str
     is_streaming: bool
     session_id: str
     processing_time: float
 
-# 添加静态文件服务
-app.mount("/static", StaticFiles(directory="static"), name="static")
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
 
-# 根路径重定向到index.html
-@app.get("/")
-async def read_root():
-    return FileResponse("static/index.html")
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-# 创建新会话
-@app.post("/api/create_session")
-async def create_session():
-    session_id = str(uuid.uuid4())
-    return {"session_id": session_id}
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
-# 查询历史消息
-@app.get("/api/history/{session_id}")
-async def get_history(session_id: str):
-    try:
-        history = qa_system.get_session_history(session_id)
-        return {"session_id": session_id, "history": history}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取历史记录失败: {str(e)}")
+# ========== Greeting Patterns ==========
 
-# 清除历史消息
-@app.delete("/api/history/{session_id}")
-async def clear_history(session_id: str):
-    success = qa_system.clear_session_history(session_id)
-    if success:
-        return {"status": "success", "message": "历史记录已清除"}
-    else:
-        raise HTTPException(status_code=500, detail="清除历史记录失败")
+GREETING_PATTERNS = [
+    {"pattern": r"^(你好|您好|hi|hello)", "response": "你好！我是黑马程序员，专注于为学生答疑解惑，很高兴为你服务！"},
+    {"pattern": r"^(你是谁|您是谁|你叫什么|你的名字|who are you)", "response": "我是黑马程序员，你的智能学习助手，致力于提供 IT 教育相关的解答！"},
+    {"pattern": r"^(在吗|在不在|有人吗)", "response": "我在！我是黑马程序员，随时为你解答问题！"},
+    {"pattern": r"^(干嘛呢|你在干嘛|做什么)", "response": "我正在待命，随时为你解答 IT 学习相关的问题！有什么我可以帮你的？"},
+]
 
 
-# 检查是否为日常问候用语并返回模板回复
 def check_greeting(query: str) -> Optional[str]:
-    query_text = query.strip()  # 去除 # 前缀
+    query_text = query.strip()
     for pattern_info in GREETING_PATTERNS:
         if re.match(pattern_info["pattern"], query_text, re.IGNORECASE):
             return pattern_info["response"]
     return None
 
 
-# 非流式查询接口
+# ========== Static & Root ==========
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/")
+async def read_root():
+    return FileResponse("static/index.html")
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+
+# ========== Auth Endpoints ==========
+
+@app.post("/api/auth/register")
+async def register(request: RegisterRequest):
+    audit = get_audit_logger()
+    # Security checks
+    valid, err = SecurityFilter.validate_username(request.username)
+    if not valid:
+        return JSONResponse(status_code=400, content={"detail": err})
+    valid, err = SecurityFilter.validate_password(request.password)
+    if not valid:
+        return JSONResponse(status_code=400, content={"detail": err})
+
+    repo = UserRepository(SessionLocal)
+    if repo.username_exists(request.username):
+        return JSONResponse(status_code=400, content={"detail": "用户名已存在"})
+
+    password_hash = hash_password(request.password)
+    user = repo.create(request.username, password_hash)
+
+    access_token = create_access_token(user.id, user.username)
+    refresh_token, jti, expires_at = create_refresh_token(user.id, user.username)
+
+    # Store refresh token
+    from models.refresh_token import RefreshToken
+    with SessionLocal() as session:
+        rt = RefreshToken(
+            user_id=user.id, token_jti=jti,
+            expires_at=expires_at, device_info=None
+        )
+        session.add(rt)
+        session.commit()
+
+    audit.log(AuditEventType.REGISTER_SUCCESS, user_id=user.id)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "username": user.username,
+        "user_id": user.id,
+    }
+
+
+@app.post("/api/auth/login")
+async def login(request: LoginRequest):
+    audit = get_audit_logger()
+
+    repo = UserRepository(SessionLocal)
+    user = repo.get_by_username(request.username)
+    if not user or not verify_password(request.password, user.password_hash):
+        audit.log(AuditEventType.LOGIN_FAILED, detail={"username": request.username})
+        return JSONResponse(status_code=401, content={"detail": "用户名或密码错误"})
+
+    access_token = create_access_token(user.id, user.username)
+    refresh_token, jti, expires_at = create_refresh_token(user.id, user.username)
+
+    from models.refresh_token import RefreshToken
+    with SessionLocal() as session:
+        rt = RefreshToken(
+            user_id=user.id, token_jti=jti,
+            expires_at=expires_at, device_info=None
+        )
+        session.add(rt)
+        session.commit()
+
+    audit.log(AuditEventType.LOGIN_SUCCESS, user_id=user.id)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "username": user.username,
+        "user_id": user.id,
+    }
+
+
+@app.post("/api/auth/refresh")
+async def refresh_token(request: RefreshRequest):
+    audit = get_audit_logger()
+
+    try:
+        payload = decode_refresh_token(request.refresh_token)
+    except Exception:
+        return JSONResponse(status_code=401, content={"detail": "Refresh Token 无效或已过期"})
+
+    # Check blacklist
+    redis_client = RedisClient()
+    jti = payload.get("jti")
+    if jti and redis_client.is_token_blacklisted(jti):
+        return JSONResponse(status_code=401, content={"detail": "Refresh Token 已失效"})
+
+    # Revoke old refresh token
+    redis_client.blacklist_token(jti, get_token_ttl(request.refresh_token))
+    from models.refresh_token import RefreshToken
+    with SessionLocal() as session:
+        rt = session.query(RefreshToken).filter(RefreshToken.token_jti == jti).first()
+        if rt:
+            rt.revoked = True
+            session.commit()
+
+    user_id = payload["user_id"]
+    username = payload["username"]
+
+    new_access_token = create_access_token(user_id, username)
+    new_refresh_token, new_jti, new_expires_at = create_refresh_token(user_id, username)
+
+    with SessionLocal() as session:
+        rt = RefreshToken(
+            user_id=user_id, token_jti=new_jti,
+            expires_at=new_expires_at, device_info=None
+        )
+        session.add(rt)
+        session.commit()
+
+    audit.log(AuditEventType.TOKEN_REFRESH, user_id=user_id)
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "username": username,
+        "user_id": user_id,
+    }
+
+
+@app.post("/api/auth/logout")
+async def logout(user: dict = Depends(require_auth)):
+    audit = get_audit_logger()
+    redis_client = RedisClient()
+    jti = user.get("jti")
+    if jti:
+        redis_client.blacklist_token(jti, 3600)
+
+    audit.log(AuditEventType.LOGOUT, user_id=user["user_id"])
+    return {"message": "已登出"}
+
+
+# ========== Session Endpoints ==========
+
+@app.post("/api/create_session")
+async def create_session(user: dict = Depends(get_current_user)):
+    session_id = str(uuid.uuid4())
+    return {"session_id": session_id, "user_id": user["user_id"]}
+
+
+@app.get("/api/sessions")
+async def get_user_sessions(user: dict = Depends(require_auth)):
+    repo = ConversationRepository(SessionLocal)
+    sessions = repo.get_user_sessions(user["user_id"])
+    return {"sessions": sessions, "username": user["username"]}
+
+
+@app.get("/api/history/{session_id}")
+async def get_history(session_id: str, user: dict = Depends(require_auth)):
+    repo = ConversationRepository(SessionLocal)
+    history = repo.get_session_history(session_id, user["user_id"])
+    return {"session_id": session_id, "history": history}
+
+
+@app.delete("/api/history/{session_id}")
+async def clear_history(session_id: str, user: dict = Depends(require_auth)):
+    audit = get_audit_logger()
+    repo = ConversationRepository(SessionLocal)
+    success = repo.delete_session(session_id, user["user_id"])
+    if success:
+        audit.log(AuditEventType.HISTORY_CLEARED, user_id=user["user_id"],
+                  detail={"session_id": session_id})
+        return {"status": "success", "message": "历史记录已清除"}
+    else:
+        raise HTTPException(status_code=500, detail="清除历史记录失败")
+
+
+@app.get("/api/sources")
+async def get_sources():
+    return {"sources": qa_system.config.VALID_SOURCES}
+
+
+# ========== Query Endpoint ==========
+
 @app.post("/api/query")
-async def query(request: QueryRequest):
-    start_time = time.time()  # 记录开始时间
-    # 使用请求中的 session_id 或生成新 ID
+async def query(request: QueryRequest, user: dict = Depends(get_current_user)):
+    start_time = time.time()
     session_id = request.session_id or str(uuid.uuid4())
-    # 检查是否为日常问候
+
     greeting_response = check_greeting(request.query)
     if greeting_response:
-        # 返回问候回复
         return {
             "answer": greeting_response,
             "is_streaming": False,
             "session_id": session_id,
             "processing_time": time.time() - start_time
         }
-    # 执行 BM25 搜索
+
     answer, need_rag = qa_system.bm25_search.search(request.query, threshold=0.85)
     if need_rag:
-        # 需要 RAG，提示使用 WebSocket
         return {
             "answer": "请使用WebSocket接口获取流式响应",
             "is_streaming": True,
             "session_id": session_id,
             "processing_time": time.time() - start_time
         }
-    # 返回 MySQL 答案
+
     return {
         "answer": answer,
         "is_streaming": False,
@@ -142,107 +312,98 @@ async def query(request: QueryRequest):
         "processing_time": time.time() - start_time
     }
 
-# 流式查询WebSocket接口
+
+# ========== WebSocket Endpoint ==========
+
 @app.websocket("/api/stream")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()  # 接受 WebSocket 连接
+    token = websocket.query_params.get("token")
+    user_id = 0
+    username = "anonymous"
+
+    if token:
+        try:
+            payload = decode_access_token(token)
+            redis_client = RedisClient()
+            jti = payload.get("jti")
+            if not jti or not redis_client.is_token_blacklisted(jti):
+                user_id = payload["user_id"]
+                username = payload["username"]
+        except Exception:
+            await websocket.close(code=4001, reason="令牌无效或已过期")
+            return
+    else:
+        await websocket.close(code=4001, reason="未提供认证令牌")
+        return
+
+    await websocket.accept()
     try:
         while True:
-            # 接收客户端消息
             data = await websocket.receive_text()
-            request_data = json.loads(data)  # 解析 JSON 数据
-            # 获取查询参数
-            query = request_data.get("query")
+            request_data = json.loads(data)
+            query_text = request_data.get("query")
             source_filter = request_data.get("source_filter")
             session_id = request_data.get("session_id", str(uuid.uuid4()))
-            start_time = time.time()  # 记录开始时间
-            # 发送开始标志
+            start_time = time.time()
+
             if websocket.client_state == websocket.client_state.CONNECTED:
-                await websocket.send_json({
-                    "type": "start",
-                    "session_id": session_id
-                })
-            # 检查是否为日常问候
-            greeting_response = check_greeting(query)
+                await websocket.send_json({"type": "start", "session_id": session_id})
+
+            greeting_response = check_greeting(query_text)
             if greeting_response:
                 if websocket.client_state == websocket.client_state.CONNECTED:
-                    # 发送问候回复
                     await websocket.send_json({
-                        "type": "token",
-                        "token": greeting_response,
+                        "type": "token", "token": greeting_response,
                         "session_id": session_id
                     })
-                    # 发送结束标志
                     await websocket.send_json({
-                        "type": "end",
-                        "session_id": session_id,
+                        "type": "end", "session_id": session_id,
                         "is_complete": True,
                         "processing_time": time.time() - start_time
                     })
                 break
-            # 调用问答系统，流式处理查询
+
             collected_answer = ""
-            for token, is_complete in qa_system.query(query, source_filter=source_filter, session_id=session_id):
-                collected_answer += token  # 累积答案
+            for token_val, is_complete in qa_system.query(
+                query_text, user_id=user_id,
+                source_filter=source_filter, session_id=session_id
+            ):
+                collected_answer += token_val
                 if is_complete and not collected_answer:
                     if websocket.client_state == websocket.client_state.CONNECTED:
-                        # 发送结束标志
                         await websocket.send_json({
-                            "type": "end",
-                            "session_id": session_id,
+                            "type": "end", "session_id": session_id,
                             "is_complete": True,
                             "processing_time": time.time() - start_time
                         })
                     break
-                if token and websocket.client_state == websocket.client_state.CONNECTED:
-                    # 发送 token 数据
+                if token_val and websocket.client_state == websocket.client_state.CONNECTED:
                     await websocket.send_json({
-                        "type": "token",
-                        "token": token,
+                        "type": "token", "token": token_val,
                         "session_id": session_id
                     })
                 if is_complete:
                     if websocket.client_state == websocket.client_state.CONNECTED:
-                        # 发送结束标志
                         await websocket.send_json({
-                            "type": "end",
-                            "session_id": session_id,
+                            "type": "end", "session_id": session_id,
                             "is_complete": True,
                             "processing_time": time.time() - start_time
                         })
                     break
-                await asyncio.sleep(0.01)  # 控制流式输出的速度
+                await asyncio.sleep(0.01)
     except WebSocketDisconnect as e:
-        # 记录 WebSocket 断开信息
         print(f"WebSocket disconnected: code={e.code}, reason={e.reason}")
     except Exception as e:
-        # 记录错误信息
         print(f"WebSocket error: {str(e)}")
         if websocket.client_state == websocket.client_state.CONNECTED:
-            # 发送错误消息
-            await websocket.send_json({
-                "type": "error",
-                "error": str(e)
-            })
+            await websocket.send_json({"type": "error", "error": str(e)})
     finally:
         try:
             if websocket.client_state == websocket.client_state.CONNECTED:
-                # 关闭 WebSocket 连接
                 await websocket.close()
         except Exception as e:
-            # 记录关闭连接时的错误
             print(f"Error closing WebSocket: {str(e)}")
 
-
-# 健康检查端点
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
-
-# 获取有效的学科类别
-@app.get("/api/sources")
-async def get_sources():
-    return {"sources": qa_system.config.VALID_SOURCES}
 
 if __name__ == "__main__":
     import uvicorn

@@ -84,6 +84,20 @@ class Config():
         # 日志文件路径
         self.LOG_FILE = self.config.get('logger', 'log_file', fallback='logs/app.log')
 
+        # Auth 配置
+        self.JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or self.config.get(
+            'auth', 'jwt_secret_key', fallback=''
+        )
+        self.ACCESS_TOKEN_EXPIRE_MINUTES = self.config.getint(
+            'auth', 'access_token_expire_minutes', fallback=30
+        )
+        self.REFRESH_TOKEN_EXPIRE_DAYS = self.config.getint(
+            'auth', 'refresh_token_expire_days', fallback=7
+        )
+        self.BCRYPT_COST_FACTOR = self.config.getint(
+            'auth', 'bcrypt_cost_factor', fallback=12
+        )
+
 
 if __name__ == '__main__':
     conf = Config()
