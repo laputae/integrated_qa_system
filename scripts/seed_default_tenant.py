@@ -9,8 +9,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import text, update
-from models.base import SessionLocal, init_db, Base, engine
-from models.tenant import Tenant
+from db_models.base import SessionLocal, init_db, Base, engine
+from db_models.tenant import Tenant
 
 
 def run_ddl():
@@ -96,9 +96,9 @@ def seed():
             print(f"Default tenant already exists (id={tenant_id})")
 
         # Migrate NULL tenant_id rows to default tenant
-        from models.user import User
-        from models.conversation import Conversation
-        from models.refresh_token import RefreshToken
+        from db_models.user import User
+        from db_models.conversation import Conversation
+        from db_models.refresh_token import RefreshToken
 
         for model, label in [
             (User, "users"),

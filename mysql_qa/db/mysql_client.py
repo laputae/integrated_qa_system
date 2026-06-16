@@ -19,7 +19,7 @@ class MySQLClient:
         if engine is not None:
             self.engine = engine
         else:
-            from models.base import engine as default_engine
+            from db_models.base import engine as default_engine
             self.engine = default_engine
 
     def fetch_questions(self):

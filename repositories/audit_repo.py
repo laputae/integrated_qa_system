@@ -1,6 +1,6 @@
 from typing import Optional
 
-from models.audit_log import AuditLog
+from db_models.audit_log import AuditLog
 
 
 class AuditRepository:

@@ -12,7 +12,7 @@ class IntegratedQASystem:
         self.logger = logger
         self.config = Config()
 
-        from models.base import init_db, SessionLocal, Base, engine
+        from db_models.base import init_db, SessionLocal, Base, engine
         self.engine = engine
         self.SessionLocal = SessionLocal
 

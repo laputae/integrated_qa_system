@@ -26,7 +26,7 @@ class AuditLogger:
     def repo(self):
         if self._repo is None:
             from repositories.audit_repo import AuditRepository
-            from models.base import SessionLocal
+            from db_models.base import SessionLocal
             self._repo = AuditRepository(SessionLocal)
         return self._repo
 

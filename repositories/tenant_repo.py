@@ -2,7 +2,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from models.tenant import Tenant
+from db_models.tenant import Tenant
 
 
 class TenantRepository:

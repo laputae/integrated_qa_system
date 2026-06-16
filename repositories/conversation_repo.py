@@ -3,7 +3,7 @@ from typing import Optional
 from sqlalchemy import desc, and_, func
 from sqlalchemy.orm import Session
 
-from models.conversation import Conversation
+from db_models.conversation import Conversation
 
 
 class ConversationRepository:

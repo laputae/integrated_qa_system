@@ -27,7 +27,7 @@ from gateway.auth import (
 from gateway.security import SecurityFilter
 from gateway.deps import get_current_user, require_auth
 from gateway.audit import AuditLogger, AuditEventType, get_audit_logger
-from models.base import init_db, SessionLocal, Base, engine
+from db_models.base import init_db, SessionLocal, Base, engine
 from repositories.user_repo import UserRepository
 from repositories.conversation_repo import ConversationRepository
 from repositories.tenant_repo import TenantRepository
@@ -137,7 +137,7 @@ async def register(request: RegisterRequest):
     refresh_token, jti, expires_at = create_refresh_token(user.id, user.username, tenant.id)
 
     # Store refresh token
-    from models.refresh_token import RefreshToken
+    from db_models.refresh_token import RefreshToken
     with SessionLocal() as session:
         rt = RefreshToken(
             user_id=user.id, tenant_id=tenant.id,
@@ -178,7 +178,7 @@ async def login(request: LoginRequest):
     access_token = create_access_token(user.id, user.username, tenant.id)
     refresh_token, jti, expires_at = create_refresh_token(user.id, user.username, tenant.id)
 
-    from models.refresh_token import RefreshToken
+    from db_models.refresh_token import RefreshToken
     with SessionLocal() as session:
         rt = RefreshToken(
             user_id=user.id, tenant_id=tenant.id,
@@ -215,7 +215,7 @@ async def refresh_token(request: RefreshRequest):
 
     # Revoke old refresh token
     redis_client.blacklist_token(jti, get_token_ttl(request.refresh_token))
-    from models.refresh_token import RefreshToken
+    from db_models.refresh_token import RefreshToken
     with SessionLocal() as session:
         rt = session.query(RefreshToken).filter(RefreshToken.token_jti == jti).first()
         if rt:
