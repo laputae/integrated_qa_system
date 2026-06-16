@@ -43,10 +43,32 @@ integrated_qa_system/
 │   ├── config.py                  # 配置管理（读取 config.ini）
 │   └── logger.py                  # 日志系统
 │
+├── db_models/                     # SQLAlchemy 数据模型
+│   ├── base.py                    # 引擎、Session、Base 基类
+│   ├── tenant.py                  # Tenant 模型（多租户）
+│   ├── user.py                    # User 模型（用户认证）
+│   ├── conversation.py            # Conversation 模型（对话历史）
+│   ├── refresh_token.py           # RefreshToken 模型（JWT 刷新令牌）
+│   └── audit_log.py               # AuditLog 模型（审计日志）
+│
+├── repositories/                  # 数据访问层
+│   ├── tenant_repo.py             # 租户 CRUD
+│   ├── user_repo.py               # 用户 CRUD
+│   ├── conversation_repo.py       # 会话历史 CRUD
+│   └── audit_repo.py              # 审计日志写入
+│
+├── gateway/                       # API 网关层
+│   ├── auth.py                    # JWT 签发/校验、密码哈希
+│   ├── deps.py                    # FastAPI 依赖注入（get_current_user）
+│   ├── middleware.py              # 网关中间件
+│   ├── security.py                # 输入安全过滤
+│   ├── rate_limiter.py            # 速率限制
+│   └── audit.py                   # 审计日志器
+│
 ├── mysql_qa/                      # MySQL QA 模块（Tier 1）
 │   ├── main.py                    # MySQLQASystem 独立 CLI
-│   ├── db/mysql_client.py         # MySQL 连接、建表、数据导入
-│   ├── cache/redis_client.py      # Redis 缓存（问题/答案）
+│   ├── db/mysql_client.py         # MySQL 查询（jpkb 表）
+│   ├── cache/redis_client.py      # Redis 缓存 + Token 黑名单 + 限流
 │   ├── retrieval/bm25_search.py   # BM25Okapi + Softmax 搜索
 │   ├── utils/preprocess.py        # jieba 中文分词
 │   └── data/                      # 问答对 CSV 数据
@@ -70,6 +92,9 @@ integrated_qa_system/
 │       ├── bge-reranker-large/    # BGE-Reranker 交叉编码器
 │       └── bert-base-chinese/     # BERT 中文基础模型
 │
+├── scripts/                       # 运维脚本
+│   └── seed_default_tenant.py     # 一键建表 + 写入默认租户
+│
 ├── static/                        # Web 前端（HTML/CSS/JS）
 ├── new_main.py                    # 主调度器（IntegratedQASystem）
 ├── app.py                         # FastAPI 主入口（WebSocket + REST + 静态服务）
@@ -81,7 +106,7 @@ integrated_qa_system/
 
 ## 环境要求
 
-- **Python** ≥ 3.12
+- **Python** ≥ 3.11, &lt; 3.13
 - **uv**（Python 包管理器，推荐）
 - **MySQL** 5.7+（建议 8.0）
 - **Redis** 6.0+
@@ -143,6 +168,15 @@ candidate_m = 2
 valid_sources = ["ai", "java", "test", "ops", "bigdata"]
 customer_service_phone = 12345678
 
+[auth]
+jwt_secret_key = <your-random-64-char-hex-key>
+access_token_expire_minutes = 30
+refresh_token_expire_days = 7
+bcrypt_cost_factor = 12
+
+[tenant]
+default_tenant_name = default
+
 [logger]
 log_file = logs/app.log
 ```
@@ -151,33 +185,171 @@ log_file = logs/app.log
 
 ## 数据库初始化
 
-### 1. 创建 MySQL 数据库
+系统使用 **MySQL** 存储结构化数据（6 张表）和 **Milvus** 存储向量数据（1 个 Collection）。
+
+### 创建 MySQL 数据库
 
 ```sql
 CREATE DATABASE IF NOT EXISTS subjects_kg DEFAULT CHARACTER SET utf8mb4;
+USE subjects_kg;
 ```
 
-### 2. 导入问答数据
+### 方式一：自动建表（推荐）
+
+启动应用时，`IntegratedQASystem` 初始化会自动调用 `Base.metadata.create_all(engine)` 创建所有 SQLAlchemy 管理的表（tenants / users / conversations / refresh_tokens / audit_logs），并运行 seed 脚本写入默认租户：
+
+```bash
+# 1. 先创建数据库（见上方 SQL）
+# 2. 运行 seed 脚本，自动建表 + 写入默认租户
+uv run python scripts/seed_default_tenant.py
+```
+
+`jpkb` 问答表不走 ORM，需要手动创建（见下方方式二）。
+
+### 方式二：手动建表
+
+完整的 SQL 建表语句如下：
+
+```sql
+-- ===================== 业务表 =====================
+
+-- 1. 问答对表（BM25 精确匹配数据源）
+CREATE TABLE IF NOT EXISTS jpkb (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    subject_name VARCHAR(20)  NOT NULL COMMENT '学科名称',
+    question     VARCHAR(1000) NOT NULL COMMENT '问题文本',
+    answer       VARCHAR(1000) NOT NULL COMMENT '答案文本'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ===================== 多租户 & 认证表（SQLAlchemy ORM 管理） =====================
+
+-- 2. 租户表
+CREATE TABLE IF NOT EXISTS tenants (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL COMMENT '租户名称',
+    is_active  BOOLEAN      NOT NULL DEFAULT TRUE COMMENT '是否启用',
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_tenant_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 3. 用户表
+CREATE TABLE IF NOT EXISTS users (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id     INT          NOT NULL DEFAULT 1 COMMENT '所属租户',
+    username      VARCHAR(50)  NOT NULL COMMENT '用户名',
+    password_hash VARCHAR(255) NOT NULL COMMENT 'bcrypt 密码哈希',
+    is_active     BOOLEAN      NOT NULL DEFAULT TRUE COMMENT '是否激活',
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_user_tenant (username, tenant_id),
+    INDEX idx_users_tenant (tenant_id),
+    CONSTRAINT fk_users_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 4. 会话历史表
+CREATE TABLE IF NOT EXISTS conversations (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id  INT          NOT NULL DEFAULT 1 COMMENT '所属租户',
+    user_id    INT          NOT NULL COMMENT '用户ID',
+    session_id VARCHAR(36)  NOT NULL COMMENT '会话UUID',
+    question   TEXT         NOT NULL COMMENT '用户问题',
+    answer     TEXT         NOT NULL COMMENT '系统回答',
+    timestamp  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_session_id (session_id),
+    INDEX idx_user_session (user_id, session_id),
+    INDEX idx_tenant_session (tenant_id, session_id),
+    INDEX idx_conv_tenant (tenant_id),
+    CONSTRAINT fk_conv_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+    CONSTRAINT fk_conv_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 5. Refresh Token 表
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id   INT          NOT NULL DEFAULT 1 COMMENT '所属租户',
+    user_id     INT          NOT NULL COMMENT '用户ID',
+    token_jti   VARCHAR(36)  NOT NULL COMMENT 'JWT JTI 唯一标识',
+    device_info VARCHAR(255) NULL COMMENT '设备信息',
+    expires_at  DATETIME     NOT NULL COMMENT '过期时间',
+    revoked     BOOLEAN      NOT NULL DEFAULT FALSE COMMENT '是否已撤销',
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_token_jti (token_jti),
+    INDEX idx_rt_user (user_id),
+    INDEX idx_rt_tenant (tenant_id),
+    CONSTRAINT fk_rt_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+    CONSTRAINT fk_rt_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 6. 审计日志表
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id  INT          NULL COMMENT '所属租户',
+    user_id    INT          NULL COMMENT '用户ID',
+    event_type VARCHAR(50)  NOT NULL COMMENT '事件类型',
+    ip_address VARCHAR(45)  NULL COMMENT '来源IP',
+    user_agent VARCHAR(500) NULL COMMENT 'User-Agent',
+    detail     TEXT         NULL COMMENT '事件详情JSON',
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_audit_created (created_at),
+    INDEX idx_audit_user (user_id),
+    INDEX idx_tenant_event (tenant_id, event_type),
+    INDEX idx_audit_tenant (tenant_id),
+    CONSTRAINT fk_audit_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 7. 写入默认租户（必须，否则用户注册/登录会失败）
+INSERT INTO tenants (name) VALUES ('default')
+ON DUPLICATE KEY UPDATE name = name;
+```
+
+### 各表用途说明
+
+| 表名 | 用途 | 管理方式 |
+|------|------|----------|
+| `jpkb` | BM25 精确匹配问答对 | 手动 SQL / CSV 导入 |
+| `tenants` | 多租户隔离 | SQLAlchemy ORM（自动建表） |
+| `users` | 用户注册/登录 | SQLAlchemy ORM（自动建表） |
+| `conversations` | 对话历史（按 session_id + user_id + tenant_id 隔离） | SQLAlchemy ORM（自动建表） |
+| `refresh_tokens` | JWT Refresh Token 持久化 | SQLAlchemy ORM（自动建表） |
+| `audit_logs` | 用户操作审计日志 | SQLAlchemy ORM（自动建表） |
+
+### 导入 BM25 问答数据
+
+将 CSV 数据导入 `jpkb` 表：
+
+```sql
+-- CSV 格式：subject_name, question, answer
+LOAD DATA LOCAL INFILE 'mysql_qa/data/JP学科知识问答.csv'
+INTO TABLE jpkb
+FIELDS TERMINATED BY ','
+OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS
+(subject_name, question, answer);
+```
+
+或者用 Python 脚本导入：
 
 ```python
-from mysql_qa.db.mysql_client import MySQLClient
+import csv
+from db_models.base import SessionLocal, engine
+from sqlalchemy import text
 
-client = MySQLClient()
-client.create_table()                               # 创建 jpkb 表
-client.insert_data(csv_path='mysql_qa/data/JP学科知识问答.csv')
-client.close()
+with open('mysql_qa/data/JP学科知识问答.csv', 'r', encoding='utf-8') as f:
+    reader = csv.DictReader(f)
+    rows = [(r['学科名称'], r['问题'], r['答案']) for r in reader]
+
+with SessionLocal() as session:
+    for subject, question, answer in rows:
+        session.execute(
+            text("INSERT INTO jpkb (subject_name, question, answer) VALUES (:s, :q, :a)"),
+            {"s": subject, "q": question, "a": answer}
+        )
+    session.commit()
 ```
 
-`jpkb` 表结构：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INT AUTO_INCREMENT | 主键 |
-| subject_name | VARCHAR(20) | 学科名称（如 Python学科） |
-| question | VARCHAR(1000) | 问题文本 |
-| answer | VARCHAR(1000) | 答案文本 |
-
-### 3. 构建 RAG 向量库
+### 构建 RAG 向量库
 
 **文档目录结构**：
 
@@ -214,6 +386,26 @@ uv run python rag_qa/rag_main.py --data-processing --data-dir /path/to/your/docu
 - 执行父子块切分（父块 1200 字符，子块 300 字符）
 - 子块写入 Milvus 向量库（BGE-M3 稠密 + 稀疏混合嵌入）
 
+## 首次启动
+
+```bash
+# 1. 安装依赖
+uv sync
+
+# 2. 编辑 config.ini，填写 MySQL / Redis / Milvus 连接信息和 LLM API Key
+
+# 3. 创建 MySQL 数据库
+#    在 MySQL 中执行：CREATE DATABASE IF NOT EXISTS subjects_kg DEFAULT CHARACTER SET utf8mb4;
+
+# 4. 一键建表 + 写入默认租户
+uv run python scripts/seed_default_tenant.py
+
+# 5. 手动创建 jpkb 表并导入问答数据（参考上方「数据库初始化」→「方式二」的 SQL）
+
+# 6. 构建 RAG 向量库（参考上方「构建 RAG 向量库」）
+uv run python rag_qa/rag_main.py --data-processing
+```
+
 ## 启动服务
 
 ### 方式一：Web 全功能模式（推荐）
@@ -226,16 +418,21 @@ uv run uvicorn app:app --host 0.0.0.0 --port 8000
 
 API 端点：
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/` | 聊天 Web 界面 |
-| POST | `/api/query` | 非流式查询（BM25 快捷接口） |
-| WebSocket | `/api/stream` | 流式查询（支持 RAG 流式输出） |
-| POST | `/api/create_session` | 创建会话 |
-| GET | `/api/history/{session_id}` | 获取对话历史 |
-| DELETE | `/api/history/{session_id}` | 清除对话历史 |
-| GET | `/api/sources` | 获取支持的学科类别 |
-| GET | `/health` | 健康检查 |
+| 方法 | 路径 | 说明 | 认证 |
+|------|------|------|------|
+| GET | `/` | 聊天 Web 界面 | 无 |
+| POST | `/api/auth/register` | 用户注册 | 无 |
+| POST | `/api/auth/login` | 用户登录，返回 JWT | 无 |
+| POST | `/api/auth/refresh` | 刷新 Access Token | Refresh Token |
+| POST | `/api/auth/logout` | 登出（Token 加入黑名单） | 必须 |
+| POST | `/api/create_session` | 创建会话 | 可选 |
+| GET | `/api/sessions` | 获取用户会话列表 | 必须 |
+| POST | `/api/query` | 非流式查询（BM25 快捷接口） | 可选 |
+| WebSocket | `/api/stream` | 流式查询（支持 RAG 流式输出） | Token 参数 |
+| GET | `/api/history/{session_id}` | 获取对话历史 | 必须 |
+| DELETE | `/api/history/{session_id}` | 清除对话历史 | 必须 |
+| GET | `/api/sources` | 获取支持的学科类别 | 无 |
+| GET | `/health` | 健康检查 | 无 |
 
 ### 方式二：SSE 流式接口
 
@@ -307,7 +504,7 @@ LLM 根据查询特征自动从四种策略中选取：
 ### 对话历史管理
 
 - 每个会话最多保留最近 **5 轮** 对话
-- 历史存储于 MySQL `conversations` 表，通过 `session_id` 隔离
+- 历史存储于 MySQL `conversations` 表，通过 `session_id` + `user_id` + `tenant_id` 联合隔离
 - 历史以 `[{question, answer}, ...]` 形式注入 RAG 提示词模板
 
 ## 评估
