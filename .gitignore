@@ -31,3 +31,6 @@ Thumbs.db
 
 # ========== 敏感配置文件（仅本地配置）==========
 .env.local
+/.claude/milestones.md
+/AuthPlan.md
+/OPTIMIZATION_PLAN.md
