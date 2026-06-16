@@ -119,16 +119,18 @@ class GatewayMiddleware(BaseHTTPMiddleware):
             try:
                 payload = decode_access_token(token)
                 # Inject user info into request scope for downstream
+                tenant_id = payload.get("tenant_id", 0)
                 request.scope["current_user"] = {
                     "user_id": payload["user_id"],
                     "username": payload["username"],
+                    "tenant_id": tenant_id,
                 }
                 # Rate limit for business endpoints
                 user_id = payload["user_id"]
                 if path == "/api/query" or path == "/api/stream":
                     check_func = self.rate_limiter.check_query_limit if path == "/api/query" \
                         else self.rate_limiter.check_stream_limit
-                    if not check_func(user_id):
+                    if not check_func(user_id, tenant_id):
                         audit.log(AuditEventType.RATE_LIMIT_EXCEEDED,
                                   user_id=user_id, ip_address=client_ip,
                                   user_agent=user_agent, detail={"path": path})

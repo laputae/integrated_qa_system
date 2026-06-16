@@ -57,36 +57,38 @@ class IntegratedQASystem:
         from repositories.conversation_repo import ConversationRepository
         return ConversationRepository(self.SessionLocal)
 
-    def _fetch_recent_history(self, session_id: str, user_id: int):
+    def _fetch_recent_history(self, session_id: str, user_id: int, tenant_id: int):
         repo = self._get_conversation_repo()
-        return repo.get_recent_history(session_id, user_id, limit=5)
+        return repo.get_recent_history(session_id, user_id, tenant_id, limit=5)
 
-    def get_session_history(self, session_id: str, user_id: int = 0):
+    def get_session_history(self, session_id: str, user_id: int = 0, tenant_id: int = 0):
         repo = self._get_conversation_repo()
-        return repo.get_session_history(session_id, user_id)
+        return repo.get_session_history(session_id, user_id, tenant_id)
 
-    def update_session_history(self, session_id: str, user_id: int,
+    def update_session_history(self, session_id: str, user_id: int, tenant_id: int,
                                 question: str, answer: str) -> list:
         repo = self._get_conversation_repo()
-        repo.insert(session_id, user_id, question, answer)
-        repo.prune_old_records(session_id, user_id, keep=5)
+        repo.insert(session_id, user_id, tenant_id, question, answer)
+        repo.prune_old_records(session_id, user_id, tenant_id, keep=5)
         self.logger.info(f"会话 {session_id} 历史更新成功")
-        return repo.get_recent_history(session_id, user_id, limit=5)
+        return repo.get_recent_history(session_id, user_id, tenant_id, limit=5)
 
-    def clear_session_history(self, session_id: str, user_id: int = 0) -> bool:
+    def clear_session_history(self, session_id: str, user_id: int = 0,
+                               tenant_id: int = 0) -> bool:
         repo = self._get_conversation_repo()
-        return repo.delete_session(session_id, user_id)
+        return repo.delete_session(session_id, user_id, tenant_id)
 
-    def query(self, query, user_id: int = 0, source_filter=None, session_id=None):
+    def query(self, query, user_id: int = 0, tenant_id: int = 0,
+              source_filter=None, session_id=None):
         start_time = time.time()
-        self.logger.info(f"处理查询: '{query}' (会话ID: {session_id}, 用户ID: {user_id})")
-        history = self.get_session_history(session_id, user_id) if session_id else []
+        self.logger.info(f"处理查询: '{query}' (会话ID: {session_id}, 用户ID: {user_id}, 租户ID: {tenant_id})")
+        history = self.get_session_history(session_id, user_id, tenant_id) if session_id else []
 
         answer, need_rag = self.bm25_search.search(query, threshold=0.85)
         if answer:
             self.logger.info(f"MySQL答案: {answer}")
             if session_id:
-                self.update_session_history(session_id, user_id, query, answer)
+                self.update_session_history(session_id, user_id, tenant_id, query, answer)
             processing_time = time.time() - start_time
             self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
             yield answer, True
@@ -97,7 +99,7 @@ class IntegratedQASystem:
                 collected_answer += token
                 yield token, False
             if session_id:
-                self.update_session_history(session_id, user_id, query, collected_answer)
+                self.update_session_history(session_id, user_id, tenant_id, query, collected_answer)
             processing_time = time.time() - start_time
             self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
             yield "", True
@@ -111,6 +113,6 @@ class IntegratedQASystem:
 if __name__ == "__main__":
     new_qa_system = IntegratedQASystem()
     results = new_qa_system._fetch_recent_history(
-        session_id="603db0cf-cfa0-4433-9078-f37f3b29fd7c", user_id=1
+        session_id="603db0cf-cfa0-4433-9078-f37f3b29fd7c", user_id=1, tenant_id=1
     )
     print(results)

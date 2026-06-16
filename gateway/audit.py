@@ -31,11 +31,13 @@ class AuditLogger:
         return self._repo
 
     def log(self, event_type: AuditEventType, user_id: Optional[int] = None,
+            tenant_id: Optional[int] = None,
             ip_address: Optional[str] = None, user_agent: Optional[str] = None,
             detail: Optional[dict] = None):
         try:
             self.repo.insert(
                 user_id=user_id,
+                tenant_id=tenant_id,
                 event_type=event_type.value,
                 ip_address=ip_address,
                 user_agent=user_agent,

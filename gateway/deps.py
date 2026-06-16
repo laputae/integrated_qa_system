@@ -32,7 +32,7 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
 ) -> dict:
     if _is_whitelisted(request.url.path):
-        return {"user_id": 0, "username": "anonymous"}
+        return {"user_id": 0, "username": "anonymous", "tenant_id": 0}
 
     if credentials is None:
         raise HTTPException(
@@ -64,6 +64,7 @@ async def get_current_user(
     return {
         "user_id": payload["user_id"],
         "username": payload["username"],
+        "tenant_id": payload.get("tenant_id", 0),
         "jti": payload.get("jti"),
     }
 

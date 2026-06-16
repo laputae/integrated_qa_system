@@ -23,13 +23,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
-def create_access_token(user_id: int, username: str) -> str:
+def create_access_token(user_id: int, username: str, tenant_id: int) -> str:
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": str(user_id),
         "user_id": user_id,
         "username": username,
+        "tenant_id": tenant_id,
         "jti": str(uuid.uuid4()),
         "type": "access",
         "iat": now,
@@ -38,7 +39,7 @@ def create_access_token(user_id: int, username: str) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def create_refresh_token(user_id: int, username: str) -> tuple[str, str, datetime]:
+def create_refresh_token(user_id: int, username: str, tenant_id: int) -> tuple[str, str, datetime]:
     now = datetime.now(timezone.utc)
     expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     jti = str(uuid.uuid4())
@@ -46,6 +47,7 @@ def create_refresh_token(user_id: int, username: str) -> tuple[str, str, datetim
         "sub": str(user_id),
         "user_id": user_id,
         "username": username,
+        "tenant_id": tenant_id,
         "jti": jti,
         "type": "refresh",
         "iat": now,

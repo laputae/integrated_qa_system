@@ -98,6 +98,11 @@ class Config():
             'auth', 'bcrypt_cost_factor', fallback=12
         )
 
+        # Tenant 配置
+        self.DEFAULT_TENANT_NAME = self.config.get(
+            'tenant', 'default_tenant_name', fallback='default'
+        )
+
 
 if __name__ == '__main__':
     conf = Config()

@@ -8,12 +8,14 @@ class AuditRepository:
         self.session_factory = session_factory
 
     def insert(self, user_id: Optional[int], event_type: str,
+               tenant_id: Optional[int] = None,
                ip_address: Optional[str] = None,
                user_agent: Optional[str] = None,
                detail: Optional[str] = None):
         with self.session_factory() as session:
             entry = AuditLog(
                 user_id=user_id,
+                tenant_id=tenant_id,
                 event_type=event_type,
                 ip_address=ip_address,
                 user_agent=user_agent,

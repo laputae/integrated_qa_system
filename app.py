@@ -30,6 +30,7 @@ from gateway.audit import AuditLogger, AuditEventType, get_audit_logger
 from models.base import init_db, SessionLocal, Base, engine
 from repositories.user_repo import UserRepository
 from repositories.conversation_repo import ConversationRepository
+from repositories.tenant_repo import TenantRepository
 from mysql_qa import RedisClient
 
 app = FastAPI(title="问答系统API", description="集成MySQL和RAG的智能问答系统")
@@ -64,10 +65,12 @@ class QueryResponse(BaseModel):
 class RegisterRequest(BaseModel):
     username: str
     password: str
+    tenant_name: str = "default"
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+    tenant_name: str = "default"
 
 class RefreshRequest(BaseModel):
     refresh_token: str
@@ -118,33 +121,39 @@ async def register(request: RegisterRequest):
     if not valid:
         return JSONResponse(status_code=400, content={"detail": err})
 
+    tenant_repo = TenantRepository(SessionLocal)
+    tenant = tenant_repo.get_or_create(request.tenant_name)
+    if not tenant.is_active:
+        return JSONResponse(status_code=403, content={"detail": "该租户已被禁用"})
+
     repo = UserRepository(SessionLocal)
-    if repo.username_exists(request.username):
+    if repo.username_exists(request.username, tenant.id):
         return JSONResponse(status_code=400, content={"detail": "用户名已存在"})
 
     password_hash = hash_password(request.password)
-    user = repo.create(request.username, password_hash)
+    user = repo.create(request.username, password_hash, tenant.id)
 
-    access_token = create_access_token(user.id, user.username)
-    refresh_token, jti, expires_at = create_refresh_token(user.id, user.username)
+    access_token = create_access_token(user.id, user.username, tenant.id)
+    refresh_token, jti, expires_at = create_refresh_token(user.id, user.username, tenant.id)
 
     # Store refresh token
     from models.refresh_token import RefreshToken
     with SessionLocal() as session:
         rt = RefreshToken(
-            user_id=user.id, token_jti=jti,
-            expires_at=expires_at, device_info=None
+            user_id=user.id, tenant_id=tenant.id,
+            token_jti=jti, expires_at=expires_at, device_info=None
         )
         session.add(rt)
         session.commit()
 
-    audit.log(AuditEventType.REGISTER_SUCCESS, user_id=user.id)
+    audit.log(AuditEventType.REGISTER_SUCCESS, user_id=user.id, tenant_id=tenant.id)
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "username": user.username,
         "user_id": user.id,
+        "tenant_name": tenant.name,
     }
 
 
@@ -152,31 +161,40 @@ async def register(request: RegisterRequest):
 async def login(request: LoginRequest):
     audit = get_audit_logger()
 
-    repo = UserRepository(SessionLocal)
-    user = repo.get_by_username(request.username)
-    if not user or not verify_password(request.password, user.password_hash):
-        audit.log(AuditEventType.LOGIN_FAILED, detail={"username": request.username})
+    tenant_repo = TenantRepository(SessionLocal)
+    tenant = tenant_repo.get_by_name(request.tenant_name)
+    if not tenant or not tenant.is_active:
+        audit.log(AuditEventType.LOGIN_FAILED,
+                  detail={"username": request.username, "tenant": request.tenant_name})
         return JSONResponse(status_code=401, content={"detail": "用户名或密码错误"})
 
-    access_token = create_access_token(user.id, user.username)
-    refresh_token, jti, expires_at = create_refresh_token(user.id, user.username)
+    repo = UserRepository(SessionLocal)
+    user = repo.get_by_username(request.username, tenant.id)
+    if not user or not verify_password(request.password, user.password_hash):
+        audit.log(AuditEventType.LOGIN_FAILED,
+                  detail={"username": request.username, "tenant": request.tenant_name})
+        return JSONResponse(status_code=401, content={"detail": "用户名或密码错误"})
+
+    access_token = create_access_token(user.id, user.username, tenant.id)
+    refresh_token, jti, expires_at = create_refresh_token(user.id, user.username, tenant.id)
 
     from models.refresh_token import RefreshToken
     with SessionLocal() as session:
         rt = RefreshToken(
-            user_id=user.id, token_jti=jti,
-            expires_at=expires_at, device_info=None
+            user_id=user.id, tenant_id=tenant.id,
+            token_jti=jti, expires_at=expires_at, device_info=None
         )
         session.add(rt)
         session.commit()
 
-    audit.log(AuditEventType.LOGIN_SUCCESS, user_id=user.id)
+    audit.log(AuditEventType.LOGIN_SUCCESS, user_id=user.id, tenant_id=tenant.id)
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "username": user.username,
         "user_id": user.id,
+        "tenant_name": tenant.name,
     }
 
 
@@ -206,19 +224,20 @@ async def refresh_token(request: RefreshRequest):
 
     user_id = payload["user_id"]
     username = payload["username"]
+    tenant_id = payload.get("tenant_id", 0)
 
-    new_access_token = create_access_token(user_id, username)
-    new_refresh_token, new_jti, new_expires_at = create_refresh_token(user_id, username)
+    new_access_token = create_access_token(user_id, username, tenant_id)
+    new_refresh_token, new_jti, new_expires_at = create_refresh_token(user_id, username, tenant_id)
 
     with SessionLocal() as session:
         rt = RefreshToken(
-            user_id=user_id, token_jti=new_jti,
-            expires_at=new_expires_at, device_info=None
+            user_id=user_id, tenant_id=tenant_id,
+            token_jti=new_jti, expires_at=new_expires_at, device_info=None
         )
         session.add(rt)
         session.commit()
 
-    audit.log(AuditEventType.TOKEN_REFRESH, user_id=user_id)
+    audit.log(AuditEventType.TOKEN_REFRESH, user_id=user_id, tenant_id=tenant_id)
 
     return {
         "access_token": new_access_token,
@@ -236,7 +255,8 @@ async def logout(user: dict = Depends(require_auth)):
     if jti:
         redis_client.blacklist_token(jti, 3600)
 
-    audit.log(AuditEventType.LOGOUT, user_id=user["user_id"])
+    audit.log(AuditEventType.LOGOUT, user_id=user["user_id"],
+              tenant_id=user.get("tenant_id", 0))
     return {"message": "已登出"}
 
 
@@ -251,14 +271,15 @@ async def create_session(user: dict = Depends(get_current_user)):
 @app.get("/api/sessions")
 async def get_user_sessions(user: dict = Depends(require_auth)):
     repo = ConversationRepository(SessionLocal)
-    sessions = repo.get_user_sessions(user["user_id"])
+    sessions = repo.get_user_sessions(user["user_id"], tenant_id=user["tenant_id"])
     return {"sessions": sessions, "username": user["username"]}
 
 
 @app.get("/api/history/{session_id}")
 async def get_history(session_id: str, user: dict = Depends(require_auth)):
     repo = ConversationRepository(SessionLocal)
-    history = repo.get_session_history(session_id, user["user_id"])
+    history = repo.get_session_history(session_id, user["user_id"],
+                                       tenant_id=user["tenant_id"])
     return {"session_id": session_id, "history": history}
 
 
@@ -266,9 +287,11 @@ async def get_history(session_id: str, user: dict = Depends(require_auth)):
 async def clear_history(session_id: str, user: dict = Depends(require_auth)):
     audit = get_audit_logger()
     repo = ConversationRepository(SessionLocal)
-    success = repo.delete_session(session_id, user["user_id"])
+    success = repo.delete_session(session_id, user["user_id"],
+                                  tenant_id=user["tenant_id"])
     if success:
         audit.log(AuditEventType.HISTORY_CLEARED, user_id=user["user_id"],
+                  tenant_id=user["tenant_id"],
                   detail={"session_id": session_id})
         return {"status": "success", "message": "历史记录已清除"}
     else:
@@ -320,6 +343,7 @@ async def websocket_endpoint(websocket: WebSocket):
     token = websocket.query_params.get("token")
     user_id = 0
     username = "anonymous"
+    tenant_id = 0
 
     if token:
         try:
@@ -329,6 +353,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if not jti or not redis_client.is_token_blacklisted(jti):
                 user_id = payload["user_id"]
                 username = payload["username"]
+                tenant_id = payload.get("tenant_id", 0)
         except Exception:
             await websocket.close(code=4001, reason="令牌无效或已过期")
             return
@@ -365,7 +390,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             collected_answer = ""
             for token_val, is_complete in qa_system.query(
-                query_text, user_id=user_id,
+                query_text, user_id=user_id, tenant_id=tenant_id,
                 source_filter=source_filter, session_id=session_id
             ):
                 collected_answer += token_val
