@@ -23,7 +23,7 @@ __pycache__/
 *.pt
 *.bin
 *.ckpt
-.model
+*.model
 
 # ========== 操作系统文件 ==========
 .DS_Store
@@ -34,3 +34,12 @@ Thumbs.db
 /.claude/milestones.md
 /AuthPlan.md
 /OPTIMIZATION_PLAN.md
+
+
+# ========== RAG使用的文档 ==========
+*.docx
+*.jpg
+*.txt
+*.pptx
+*.pdf
+人工智能就业课课程大纲.md
