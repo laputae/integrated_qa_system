@@ -35,11 +35,14 @@ class RedisClient:
             self.logger.error(f"Redis 连接失败: {e}")
             raise
 
-    def set_data(self, key, value):
+    def set_data(self, key, value, ttl=None):
         # 存储数据到 Redis
         try:
-            # 存储 JSON 数据
-            self.client.set(key, json.dumps(value, ensure_ascii=False))
+            serialized = json.dumps(value, ensure_ascii=False)
+            if ttl is not None:
+                self.client.setex(key, ttl, serialized)
+            else:
+                self.client.set(key, serialized)
             # 记录存储成功
             self.logger.info(f"存储数据到 Redis: {key}")
         except redis.RedisError as e:

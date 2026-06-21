@@ -78,6 +78,12 @@ class Config():
         # 最终候选数量
         self.CANDIDATE_M = self.config.getint('retrieval', 'candidate_m', fallback=2)
 
+        # Embedding 配置
+        self.EMBEDDING_MODEL = self.config.get('embedding', 'model', fallback='bge-m3')
+        self.EMBEDDING_BATCH_SIZE = self.config.getint('embedding', 'batch_size', fallback=32)
+        self.EMBEDDING_CHECKPOINT_DIR = self.config.get('embedding', 'checkpoint_dir', fallback='checkpoints/embedding')
+        self.EMBEDDING_CACHE_TTL = self.config.getint('embedding', 'cache_ttl', fallback=86400)
+
         # 应用配置
         self.CUSTOMER_SERVICE_PHONE = self.config.get('app', 'customer_service_phone')
         self.VALID_SOURCES = eval(self.config.get('app', 'valid_sources', fallback=["ai", "java", "test", "ops", "bigdata"]))

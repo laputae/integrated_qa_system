@@ -49,10 +49,10 @@ from llama_index.core.schema import (
     RelatedNodeInfo,
 )
 from llama_index.vector_stores.milvus import MilvusVectorStore
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from langchain_core.documents import Document as LangchainDocument
 from base import logger, Config
 from ingestion_tracker import IngestionTracker
+from embedding_registry import create_llamaindex_model, get_dense_dim
 
 conf = Config()
 
@@ -231,13 +231,15 @@ class LlamaIndexProcessor:
         self._init_index()
 
     def _init_embedding(self):
-        """初始化嵌入模型"""
-        model_path = os.path.join(MODEL_DIR, "bge-m3")
-        self.embed_model = HuggingFaceEmbedding(
-            model_name=model_path,
-            device="cuda" if USE_CUDA else "cpu"
+        """初始化嵌入模型（通过注册表支持多模型切换）"""
+        model_name = conf.EMBEDDING_MODEL
+        model_path = os.path.join(MODEL_DIR, model_name)
+        self.embed_model = create_llamaindex_model(
+            model_name,
+            model_path=model_path,
+            device="cuda" if USE_CUDA else "cpu",
         )
-        self.logger.info(f"嵌入模型初始化完成: {model_path}")
+        self.logger.info(f"嵌入模型初始化完成: {model_path} (model={model_name})")
 
     def _init_vector_store(self):
         """初始化 Milvus 向量存储（使用独立 collection 避免与 pymilvus 路径冲突）"""
@@ -246,7 +248,7 @@ class LlamaIndexProcessor:
             uri=f"http://{conf.MILVUS_HOST}:{conf.MILVUS_PORT}",
             collection_name=self.llamaindex_collection,
             db_name=conf.MILVUS_DATABASE_NAME,
-            dim=1024,  # BGE-M3 embedding dimension
+            dim=get_dense_dim(conf.EMBEDDING_MODEL),
             overwrite=False
         )
         self.logger.info(f"Milvus 向量存储初始化完成: {self.llamaindex_collection}")

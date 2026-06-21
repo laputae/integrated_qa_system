@@ -1,7 +1,5 @@
 # -*- coding:utf-8 -*-
-# 导入 BGE-M3 嵌入函数，用于生成文档和查询的向量表示
 import torch.cuda
-from milvus_model.hybrid import BGEM3EmbeddingFunction
 # 导入 Milvus 相关类，用于操作向量数据库
 from pymilvus import MilvusClient, DataType, AnnSearchRequest, WeightedRanker
 # 导入 Document 类，用于创建文档对象
@@ -25,6 +23,9 @@ project_root = os.path.dirname(rag_qa_path)
 sys.path.insert(0, project_root)
 from document_processor import *
 from base import logger, Config
+from embedding_registry import (
+    create_milvus_model, get_dense_dim, supports_sparse, batch_embed
+)
 
 
 conf = Config()
@@ -32,10 +33,19 @@ conf = Config()
 
 # core/vector_store.py
 # 定义 VectorStore 类，封装向量存储和检索功能
-def _sparse_row_to_dict(sparse_row) -> dict:
-    """兼容 csr_matrix (有 indices) 和 coo_array (有 col)"""
-    indices = sparse_row.indices if hasattr(sparse_row, 'indices') else sparse_row.col
-    return dict(zip(indices, sparse_row.data))
+def _sparse_to_dict(sparse_row) -> dict:
+    """Convert sparse vector to dict, handling csr_matrix, dict, and empty formats."""
+    if hasattr(sparse_row, 'indices'):
+        # csr_matrix (BGEM3 output)
+        indices = sparse_row.indices if hasattr(sparse_row, 'indices') else sparse_row.col
+        return dict(zip(indices, sparse_row.data))
+    elif isinstance(sparse_row, dict):
+        return sparse_row
+    else:
+        return {}
+
+# Alias for backward compatibility within this module
+_sparse_row_to_dict = _sparse_to_dict
 
 
 class VectorStore:
@@ -61,13 +71,20 @@ class VectorStore:
         self.logger.info(f"使用设置：{self.device}")
         # 初始化 BGE-Reranker 模型，用于重排序检索结果
         reranker_path = os.path.join(rag_qa_path, 'models', 'bge-reranker-large')
-        # print(f'reranker_path--》{reranker_path}')
         self.reranker = CrossEncoder(reranker_path, device=self.device)
-        # 初始化 BGE-M3 嵌入函数，使用 CPU 设备，不启用 FP16
-        m3_path = os.path.join(rag_qa_path, 'models', 'bge-m3')
-        self.embedding_function = BGEM3EmbeddingFunction(model_name_or_path=m3_path, use_fp16=(self.device == 'cuda'), device=self.device)
-        # 获取稠密向量的维度# 1024
-        self.dense_dim = self.embedding_function.dim["dense"]
+        # 通过注册表获取嵌入模型
+        model_name = conf.EMBEDDING_MODEL
+        self.logger.info(f"使用嵌入模型: {model_name}")
+        self.embedding_function = create_milvus_model(
+            model_name,
+            model_path=os.path.join(rag_qa_path, 'models', model_name),
+            device=self.device,
+        )
+        self.dense_dim = get_dense_dim(model_name)
+        if not supports_sparse(model_name):
+            self.logger.warning(
+                f"模型 '{model_name}' 不支持稀疏向量，混合检索将降级为纯稠密检索"
+            )
         # 初始化 Milvus 客户端，连接到指定主机和数据库
         self.client = MilvusClient(uri=f"http://{self.host}:{self.port}", db_name=self.database)
         # 调用方法创建或加载 Milvus 集合
@@ -128,29 +145,34 @@ class VectorStore:
         self.client.load_collection(self.collection_name)
 
     # 定义方法，向向量存储添加文档
-    def add_documents(self, documents):
-        # print(f'documents--》{documents[0]}')
-        # 提取所有文档的内容列表
+    def add_documents(self, documents, batch_size=None, use_checkpoint=True):
         texts = [doc.page_content for doc in documents]
 
-        # 使用 BGE-M3 嵌入函数生成文档的嵌入
-        embeddings = self.embedding_function(texts)
-        # print(f'embeddings--》{embeddings}')
-        # print(f'embeddings--》{embeddings.keys()}')
-        # 初始化空列表，存储插入的数据
+        if not texts:
+            self.logger.warning("add_documents: 文档列表为空")
+            return
+
+        batch_size = batch_size or conf.EMBEDDING_BATCH_SIZE
+
+        checkpoint_path = None
+        if use_checkpoint:
+            ckpt_dir = conf.EMBEDDING_CHECKPOINT_DIR
+            content_hash = hashlib.md5("".join(texts).encode("utf-8")).hexdigest()[:16]
+            checkpoint_path = os.path.join(ckpt_dir, f"add_docs_{content_hash}.json")
+
+        embeddings = batch_embed(
+            self.embedding_function,
+            texts,
+            batch_size=batch_size,
+            checkpoint_path=checkpoint_path,
+            resume=True,
+            desc="Embedding documents",
+        )
+
         data = []
-        # 遍历每个文档，带上索引i
         for i, doc in enumerate(documents):
-            # 生成文档内容的哈希值作为唯一的ID
             text_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
-            # print(f'text_hash--》{text_hash}')
-            # print(f'text_hash--》{type(text_hash)}')
-            sparse_vector = _sparse_row_to_dict(embeddings["sparse"][i])
-            # print(f'sparse_vector--》{sparse_vector}')
-            # print(f'sparse_vector--》{len(sparse_vector)}')
-            # print(embeddings["dense"][i])
-            # print(embeddings["dense"][i].shape)
-            # 创建数据字典，包含所有字段
+            sparse_vector = embeddings["sparse"][i]
             data.append({
                 "id": text_hash,
                 "text": doc.page_content,
@@ -161,17 +183,55 @@ class VectorStore:
                 "source": doc.metadata.get("source", "unknown"),
                 "timestamp": doc.metadata.get("timestamp", "unknown")
             })
-        # 检查是否有数据需要插入
+
         if data:
-            # 使用 upsert 操作插入数据，覆盖重复 ID
             self.client.upsert(collection_name=self.collection_name, data=data)
-            # 记录插入或更新的文档数量日志
             logger.info(f"已插入或更新 {len(data)} 个文档")
+
+    def _get_query_embedding_cached(self, query, cache_ttl=None):
+        """获取查询嵌入，优先从 Redis 缓存读取。
+        缓存 key: emb:{md5(query)}
+        缓存未命中或 Redis 不可用时降级为直接计算。
+        """
+        import hashlib
+        import numpy as np
+        from mysql_qa import RedisClient
+
+        if cache_ttl is None:
+            cache_ttl = conf.EMBEDDING_CACHE_TTL
+
+        cache_key = f"emb:{hashlib.md5(query.encode('utf-8')).hexdigest()}"
+
+        try:
+            redis_client = RedisClient()
+            cached = redis_client.get_data(cache_key)
+            if cached is not None:
+                self.logger.info(f"查询嵌入缓存命中: {cache_key}")
+                dense = np.array(cached["dense"], dtype=np.float32)
+                sparse = cached["sparse"]
+                return {"dense": [dense], "sparse": [sparse]}
+        except Exception as e:
+            self.logger.warning(f"Redis 缓存查询失败，降级为直接计算: {e}")
+
+        query_embeddings = self.embedding_function([query])
+
+        try:
+            cache_value = {
+                "dense": query_embeddings["dense"][0].tolist(),
+                "sparse": _sparse_to_dict(query_embeddings["sparse"][0]),
+            }
+            redis_client = RedisClient()
+            redis_client.set_data(cache_key, cache_value, ttl=cache_ttl)
+            self.logger.info(f"查询嵌入已缓存: {cache_key}")
+        except Exception as e:
+            self.logger.warning(f"缓存查询嵌入失败: {e}")
+
+        return query_embeddings
 
     # 定义方法，执行混合检索并重排序
     def hybrid_search_with_rerank(self, query, k=conf.RETRIEVAL_K, source_filter=None):
-        # 使用 BGE-M3 嵌入函数生成查询的嵌入
-        query_embeddings = self.embedding_function([query])
+        # 使用带缓存的查询嵌入
+        query_embeddings = self._get_query_embedding_cached(query)
         # 获取查询的稠密向量
         # print(f'query_embeddings---》{query_embeddings}')
         dense_query_vector = query_embeddings["dense"][0]
