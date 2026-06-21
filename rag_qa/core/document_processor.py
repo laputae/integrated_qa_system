@@ -17,6 +17,7 @@ from llamaindex_processor import (
     LlamaIndexProcessor,
     load_documents_from_directory as llamaindex_load,
     process_documents as llamaindex_process,
+    incremental_process_and_index as llamaindex_incremental,
     estimate_document_quality,
     LOW_QUALITY_THRESHOLD,
 )

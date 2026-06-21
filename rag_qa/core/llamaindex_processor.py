@@ -4,12 +4,14 @@ LlamaIndex 文档处理器 - 混合模式
 - 文档加载：保留原始 OCR 加载器（OCRPDFLoader/OCRDOCLoader/OCRPPTLoader/OCRIMGLoader）
 - 文本切分：保留原始 ChineseRecursiveTextSplitter + MarkdownTextSplitter
 - 索引构建：使用 LlamaIndex VectorStoreIndex 实现增量更新
+- 增量追踪：SQLite IngestionTracker + LlamaIndex ref_doc_id
 """
 import os
 import re
 import sys
 import torch
 from datetime import datetime
+from typing import Dict, List, Optional
 
 # 路径推导
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -41,10 +43,16 @@ from llama_index.core import (
     load_index_from_storage,
     Document as LlamaDocument
 )
+from llama_index.core.schema import (
+    TextNode,
+    NodeRelationship,
+    RelatedNodeInfo,
+)
 from llama_index.vector_stores.milvus import MilvusVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from langchain_core.documents import Document as LangchainDocument
 from base import logger, Config
+from ingestion_tracker import IngestionTracker
 
 conf = Config()
 
@@ -209,10 +217,15 @@ class LlamaIndexProcessor:
     - add_documents: 使用 LlamaIndex 索引（支持增量更新）
     """
 
-    def __init__(self):
+    def __init__(self, tracker_db_path: Optional[str] = None):
         self.logger = logger
         self.storage_dir = os.path.join(DATA_DIR, "llamaindex_storage")
         os.makedirs(self.storage_dir, exist_ok=True)
+
+        if tracker_db_path is None:
+            tracker_db_path = os.path.join(DATA_DIR, "ingestion_tracker.db")
+        self.tracker = IngestionTracker(tracker_db_path)
+
         self._init_embedding()
         self._init_vector_store()
         self._init_index()
@@ -227,14 +240,16 @@ class LlamaIndexProcessor:
         self.logger.info(f"嵌入模型初始化完成: {model_path}")
 
     def _init_vector_store(self):
-        """初始化 Milvus 向量存储"""
+        """初始化 Milvus 向量存储（使用独立 collection 避免与 pymilvus 路径冲突）"""
+        self.llamaindex_collection = conf.MILVUS_COLLECTION_NAME + "_llamaindex"
         self.vector_store = MilvusVectorStore(
             uri=f"http://{conf.MILVUS_HOST}:{conf.MILVUS_PORT}",
-            collection_name=conf.MILVUS_COLLECTION_NAME,
+            collection_name=self.llamaindex_collection,
             db_name=conf.MILVUS_DATABASE_NAME,
+            dim=1024,  # BGE-M3 embedding dimension
             overwrite=False
         )
-        self.logger.info("Milvus 向量存储初始化完成")
+        self.logger.info(f"Milvus 向量存储初始化完成: {self.llamaindex_collection}")
 
     def _init_index(self):
         """初始化或加载 LlamaIndex 索引"""
@@ -297,9 +312,7 @@ class LlamaIndexProcessor:
 
     def process_documents(self, directory_path, parent_chunk_size=None,
                           child_chunk_size=None, chunk_overlap=None):
-        """
-        使用原始切分器进行两级切分（保持与原有代码完全一致）
-        """
+        """使用原始切分器进行两级切分（保持与原有代码完全一致）"""
         parent_chunk_size = parent_chunk_size or conf.PARENT_CHUNK_SIZE
         child_chunk_size = child_chunk_size or conf.CHILD_CHUNK_SIZE
         chunk_overlap = chunk_overlap or conf.CHUNK_OVERLAP
@@ -307,7 +320,15 @@ class LlamaIndexProcessor:
         documents = self.load_documents(directory_path)
         self.logger.info(f"加载的文档数量: {len(documents)}")
 
-        # 初始化原始切分器
+        child_chunks = self._split_documents(
+            documents, parent_chunk_size, child_chunk_size, chunk_overlap
+        )
+        self.logger.info(f"子块数量: {len(child_chunks)}")
+        return child_chunks
+
+    def _split_documents(self, documents, parent_chunk_size, child_chunk_size,
+                         chunk_overlap):
+        """两级切分：父块→子块。复用原始 ChineseRecursiveTextSplitter + MarkdownTextSplitter"""
         parent_splitter = ChineseRecursiveTextSplitter(
             chunk_size=parent_chunk_size, chunk_overlap=chunk_overlap
         )
@@ -323,16 +344,15 @@ class LlamaIndexProcessor:
 
         child_chunks = []
         for i, doc in enumerate(documents):
-            file_extension = os.path.splitext(
-                doc.metadata.get("file_path", '')
-            )[1].lower()
+            file_path = doc.metadata.get("file_path", "")
+            file_extension = os.path.splitext(file_path)[1].lower()
             is_markdown = (file_extension == '.md')
 
             parent_splitter_to_use = markdown_parent_splitter if is_markdown else parent_splitter
             child_splitter_to_use = markdown_child_splitter if is_markdown else child_splitter
 
             self.logger.info(
-                f"处理文档: {doc.metadata['file_path']}, "
+                f"处理文档: {file_path}, "
                 f"使用切分器: {'Markdown' if is_markdown else 'ChineseRecursive'}"
             )
 
@@ -348,8 +368,192 @@ class LlamaIndexProcessor:
                     sub_chunk.metadata["id"] = f"{parent_id}_child_{k}"
                     child_chunks.append(sub_chunk)
 
-        self.logger.info(f"子块数量: {len(child_chunks)}")
         return child_chunks
+
+    def _load_selected_files(self, file_paths: List[str]) -> list:
+        """只加载指定文件列表（跳过不需要重新处理的文件），复用 OCR 加载器"""
+        documents = []
+        source = None
+        supported_extensions = document_loaders.keys()
+
+        for file_path in file_paths:
+            file_extension = os.path.splitext(file_path)[1].lower()
+
+            if file_extension not in supported_extensions:
+                self.logger.warning(f"不支持的文件类型: {file_path}")
+                continue
+
+            if source is None:
+                parent_dir = os.path.basename(os.path.dirname(file_path))
+                source = parent_dir.replace("_data", "")
+
+            try:
+                loader_class = document_loaders[file_extension]
+                if file_extension == ".txt":
+                    loader = loader_class(file_path, encoding="utf-8")
+                else:
+                    loader = loader_class(file_path)
+                loaded_docs = loader.load()
+
+                for doc in loaded_docs:
+                    doc.page_content = clean_document_text(doc.page_content)
+                    doc.metadata["source"] = source
+                    doc.metadata["file_path"] = file_path
+                    doc.metadata["timestamp"] = datetime.now().isoformat()
+                    estimate_document_quality(doc)
+
+                documents.extend(loaded_docs)
+                self.logger.info(f"成功加载文件: {file_path}")
+            except Exception as e:
+                self.logger.error(f"加载文件 {file_path} 失败: {str(e)}")
+
+        return documents
+
+    def incremental_process_and_index(
+        self,
+        directory_path: str,
+        parent_chunk_size: Optional[int] = None,
+        child_chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+    ) -> Dict[str, int]:
+        """增量处理目录并将文档添加到索引。
+
+        1. 扫描目录，哈希对比 SQLite → 分类为 new/modified/unchanged/deleted
+        2. DELETED → 从 Milvus 删除, MODIFIED → 先删旧块
+        3. 只对 NEW + MODIFIED 文件做 OCR + 切分
+        4. 用 ref_doc_id 将 chunks 关联到源文件，batch insert
+        5. 更新 SQLite 记录
+
+        Returns:
+            dict: {"new", "modified", "deleted", "unchanged", "total_chunks"}
+        """
+        self.logger.info(f"开始增量处理: {directory_path}")
+
+        # Step 1: 扫描目录
+        scan_result = self.tracker.scan_directory(directory_path)
+
+        new_count = len(scan_result["new"])
+        modified_count = len(scan_result["modified"])
+        deleted_count = len(scan_result["deleted"])
+        unchanged_count = len(scan_result["unchanged"])
+
+        self.logger.info(
+            f"扫描: {new_count} 新增, {modified_count} 修改, "
+            f"{deleted_count} 已删除, {unchanged_count} 未变"
+        )
+
+        # Step 2: 处理 DELETED 文件
+        for entry in scan_result["deleted"]:
+            doc_id = entry["doc_id"]
+            try:
+                self.index.delete_ref_doc(doc_id)
+                self.tracker.mark_deleted(doc_id)
+                self.logger.info(f"从索引删除: {entry['file_path']}")
+            except Exception as e:
+                self.logger.error(f"删除失败 {entry['file_path']}: {e}")
+
+        # Step 3: 处理 MODIFIED 文件 — 先清除旧块
+        for entry in scan_result["modified"]:
+            doc_id = entry["doc_id"]
+            try:
+                self.index.delete_ref_doc(doc_id)
+                self.logger.info(f"清除旧块: {entry['file_path']}")
+            except Exception as e:
+                self.logger.error(f"清除旧块失败 {entry['file_path']}: {e}")
+
+        # Step 4: 只加载 NEW + MODIFIED 文件
+        files_to_process = scan_result["new"] + scan_result["modified"]
+
+        if not files_to_process:
+            self.logger.info("无文件需要处理，跳过。")
+            self.index.storage_context.persist(persist_dir=self.storage_dir)
+            return {
+                "new": 0,
+                "modified": 0,
+                "deleted": deleted_count,
+                "unchanged": unchanged_count,
+                "total_chunks": 0,
+            }
+
+        parent_chunk_size = parent_chunk_size or conf.PARENT_CHUNK_SIZE
+        child_chunk_size = child_chunk_size or conf.CHILD_CHUNK_SIZE
+        chunk_overlap = chunk_overlap or conf.CHUNK_OVERLAP
+
+        # Step 4a: 加载文档
+        loaded_docs = self._load_selected_files(
+            [e["file_path"] for e in files_to_process]
+        )
+        self.logger.info(f"加载了 {len(loaded_docs)} 个文档，"
+                         f"来自 {len(files_to_process)} 个文件")
+
+        # Step 4b: 切分
+        child_chunks = self._split_documents(
+            loaded_docs, parent_chunk_size, child_chunk_size, chunk_overlap
+        )
+        self.logger.info(f"生成了 {len(child_chunks)} 个子块")
+
+        # Step 5: 按源文件分组，设置 ref_doc_id，批量插入
+        chunks_by_file: Dict[str, list] = {}
+        for chunk in child_chunks:
+            fp = chunk.metadata.get("file_path", "")
+            if fp not in chunks_by_file:
+                chunks_by_file[fp] = []
+            chunks_by_file[fp].append(chunk)
+
+        total_chunks = 0
+        for entry in files_to_process:
+            file_path = entry["file_path"]
+            doc_id = entry["doc_id"]
+            file_chunks = chunks_by_file.get(file_path, [])
+
+            if not file_chunks:
+                self.logger.warning(f"文件无块: {file_path}")
+                continue
+
+            nodes = []
+            for idx, chunk in enumerate(file_chunks):
+                node = TextNode(
+                    text=chunk.page_content,
+                    metadata={**chunk.metadata, "source_doc_id": doc_id},
+                    id_=f"{doc_id}_chunk_{idx}",
+                )
+                node.relationships[NodeRelationship.SOURCE] = RelatedNodeInfo(
+                    node_id=doc_id
+                )
+                nodes.append(node)
+
+            try:
+                self.index.insert_nodes(nodes)
+                self.tracker.mark_ingested(
+                    file_path=file_path,
+                    content_hash=entry["content_hash"],
+                    doc_id=doc_id,
+                    file_size=entry.get("file_size", 0),
+                    file_mtime=entry.get("file_mtime", 0.0),
+                    chunk_count=len(nodes),
+                )
+                total_chunks += len(nodes)
+                self.logger.info(f"插入 {len(nodes)} 个块: {file_path}")
+            except Exception as e:
+                self.logger.error(f"插入失败 {file_path}: {e}")
+
+        # Persist
+        self.index.storage_context.persist(persist_dir=self.storage_dir)
+
+        self.logger.info(
+            f"增量处理完成. "
+            f"新增: {new_count}, 修改: {modified_count}, "
+            f"删除: {deleted_count}, 未变: {unchanged_count}, "
+            f"总块数: {total_chunks}"
+        )
+
+        return {
+            "new": new_count,
+            "modified": modified_count,
+            "deleted": deleted_count,
+            "unchanged": unchanged_count,
+            "total_chunks": total_chunks,
+        }
 
     def add_documents(self, documents):
         """
@@ -392,6 +596,22 @@ def process_documents(directory_path, parent_chunk_size=None,
     )
 
 
+def incremental_process_and_index(
+    directory_path,
+    parent_chunk_size=None,
+    child_chunk_size=None,
+    chunk_overlap=None,
+):
+    """便捷函数：创建处理器并运行增量管线"""
+    processor = LlamaIndexProcessor()
+    return processor.incremental_process_and_index(
+        directory_path,
+        parent_chunk_size=parent_chunk_size,
+        child_chunk_size=child_chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+
+
 if __name__ == "__main__":
     # ---- 质量评估冒烟测试 ----
     print("=" * 50)
@@ -416,17 +636,29 @@ if __name__ == "__main__":
 
     print()
 
-    # ---- 完整流程 ----
+    # ---- 增量处理流程 ----
     processor = LlamaIndexProcessor()
     directory_path = os.path.join(DATA_DIR, "ai_data")
 
-    # 处理文档
-    docs = processor.process_documents(directory_path)
-    print(f"处理了 {len(docs)} 个子块")
+    # 首次运行 — 全部 NEW
+    print("=" * 50)
+    print("首次增量处理")
+    print("=" * 50)
+    result = processor.incremental_process_and_index(directory_path)
+    print(f"结果: {result}")
 
-    # 添加到索引
-    processor.add_documents(docs)
+    # 第二次运行 — 全部 UNCHANGED
+    print()
+    print("=" * 50)
+    print("第二次增量处理（应全部跳过）")
+    print("=" * 50)
+    result2 = processor.incremental_process_and_index(directory_path)
+    print(f"结果: {result2}")
 
     # 查询
+    print()
+    print("=" * 50)
+    print("查询测试")
+    print("=" * 50)
     response = processor.query("AI学科的课程内容是什么")
     print(response)

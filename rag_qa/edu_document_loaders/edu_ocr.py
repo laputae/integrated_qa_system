@@ -8,7 +8,17 @@ rapidocr_paddle 和 rapidocr_onnxruntime 两种导入方式
 当只有 CPU 且需要高效推理时：使用 rapidocr_onnxruntime。它在 CPU 上进行了优化，资源占用较低.
 '''
 
-def get_ocr(use_cuda: bool = True) -> "RapidOCR":
+
+def _cuda_available() -> bool:
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
+
+def get_ocr(use_cuda: bool = False) -> "RapidOCR":
+    """获取 OCR 实例。默认 CPU 模式，传入 use_cuda=True 启用 GPU。"""
     try:
         from rapidocr_paddle import RapidOCR
         '''
