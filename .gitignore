@@ -31,9 +31,7 @@ Thumbs.db
 
 # ========== 敏感配置文件（仅本地配置）==========
 .env.local
-/.claude/milestones.md
-/AuthPlan.md
-/OPTIMIZATION_PLAN.md
+.claude/
 
 
 # ========== RAG使用的文档 ==========
@@ -43,5 +41,3 @@ Thumbs.db
 *.pptx
 *.pdf
 人工智能就业课课程大纲.md
-/INTERVIEW_SCRIPT.md
-/ARCHITECTURE_MERMAID.md
