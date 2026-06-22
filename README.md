@@ -13,7 +13,7 @@
 | **会话管理** | 多轮对话历史持久化，session_id + user_id + tenant_id 三维隔离，自动裁剪保留最近 N 轮 |
 | **高可用** | 数据库连接池（pool_size=10, max_overflow=20, pool_pre_ping, pool_recycle），Redis 缓存 + 限流 |
 | **生产韧性** | 批量嵌入 Checkpoint/Resume 断点续传，增量文档加载零冗余处理，原子文件写入 |
-| **GPU 加速** | PyTorch cu126 (CUDA 12.6) 原生支持，覆盖 BERT/BGE/Reranker/OCR 全链路推理
+| **GPU 加速** | PyTorch cu126 (CUDA 12.6) 原生支持；BGE-M3 默认 CPU 运行避免 fp16 类型不匹配，OCR/训练可选用 GPU
 
 ## 架构概览
 
@@ -30,7 +30,7 @@
   ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                 IntegratedQASystem 调度层                      │
-│        会话历史管理  │  问候语检测  │  双路路由                  │
+│    会话历史管理  │  问候语检测  │  置信度阈值调度  │  双路路由     │
 └──────────────────────────────────────────────────────────────┘
   │
   ├─── Tier 1: BM25 精确匹配 ──────────────────────────────────┐
@@ -52,7 +52,7 @@
 ### 双级检索流程
 
 1. **BM25 精确匹配**：用户问题经 jieba 分词后，与 MySQL 中预存问答对进行 BM25 评分，经 softmax 归一化后若最高分 ≥ 0.85，直接返回缓存答案
-2. **RAG 语义检索**：BM25 置信度不足时自动回落，由 BERT 分类器判断查询类型，LLM 选择检索策略（直接检索 / HyDE / 子查询 / 回溯），Milvus 混合检索（稠密 + 稀疏向量）后经 CrossEncoder 重排序，最终由 LLM 流式生成答案
+2. **RAG 语义检索**：BM25 置信度不足时自动回落，由 BERT 分类器判断查询类型并输出置信度——低于阈值或命中领域关键词时强制执行 RAG，LLM 选择检索策略（直接检索 / HyDE / 子查询 / 回溯），Milvus 混合检索（稠密 + 稀疏向量）后经 CrossEncoder 重排序，最终由 LLM 流式生成答案
 
 ## 项目结构
 
@@ -94,8 +94,7 @@ integrated_qa_system/
 ├── rag_qa/                        # Tier 2: RAG 语义检索
 │   ├── rag_main.py                # RAG CLI（数据预处理 / 交互查询）
 │   ├── core/
-│   │   ├── new_rag_system.py      # RAGSystem v2（流式 + 对话历史）
-│   │   ├── rag_system.py          # RAGSystem v1（原始版本）
+│   │   ├── rag_system.py          # RAGSystem（流式 + 对话历史 + 置信度阈值调度）
 │   │   ├── vector_store.py        # Milvus 向量库 + BGE-M3 混合检索 + 重排序
 │   │   ├── embedding_registry.py  # 嵌入模型注册表（多模型 A/B 切换）+ 批量嵌入 + Checkpoint
 │   │   ├── llamaindex_processor.py # LlamaIndex 文档处理器（OCR加载 → 切分 → 批量索引）
@@ -116,12 +115,13 @@ integrated_qa_system/
 │       └── text2vec-large-chinese/ # Text2Vec 嵌入模型（768维，可选）
 │
 ├── scripts/                       # 运维脚本
-│   └── seed_default_tenant.py     # 一键建表 + 写入默认租户
+│   ├── seed_default_tenant.py     # 一键建表 + 写入默认租户
+│   └── migrate_add_is_deleted.py  # 迁移脚本：conversations 表新增 is_deleted 字段
 │
 ├── static/                        # Web 前端（HTML/CSS/JS）
 ├── tests/                         # 测试
 │   └── test_document_quality.py   # 文档质量评估冒烟测试
-├── new_main.py                    # 主调度器（IntegratedQASystem）
+├── main.py                        # 主调度器（IntegratedQASystem）
 ├── app.py                         # FastAPI 主入口（WebSocket + REST + 静态服务）
 ├── api.py                         # FastAPI SSE 流式接口
 ├── config.ini                     # 全局配置文件
@@ -190,6 +190,10 @@ model = bge-m3                # 可选: bge-m3 | bge-large-zh | text2vec-large-c
 batch_size = 32
 checkpoint_dir = checkpoints/embedding
 cache_ttl = 86400
+
+[query_classifier]
+confidence_threshold = 0.7         # 置信度低于此值时强制回退到 RAG
+domain_keywords = AI, 人工智能, 机器学习, 深度学习, 课程, 就业, 大数据, Java, Python, Docker, K8s
 
 [retrieval]
 parent_chunk_size = 1200
@@ -295,11 +299,13 @@ CREATE TABLE IF NOT EXISTS conversations (
     session_id VARCHAR(36)  NOT NULL COMMENT '会话UUID',
     question   TEXT         NOT NULL COMMENT '用户问题',
     answer     TEXT         NOT NULL COMMENT '系统回答',
+    is_deleted BOOLEAN      NOT NULL DEFAULT FALSE COMMENT '逻辑删除标记',
     timestamp  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_session_id (session_id),
     INDEX idx_user_session (user_id, session_id),
     INDEX idx_tenant_session (tenant_id, session_id),
     INDEX idx_conv_tenant (tenant_id),
+    INDEX idx_is_deleted (is_deleted),
     CONSTRAINT fk_conv_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id),
     CONSTRAINT fk_conv_user FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -484,7 +490,7 @@ API 端点：
 | POST | `/api/query` | 非流式查询（BM25 快捷接口） | 可选 |
 | WebSocket | `/api/stream` | 流式查询（支持 RAG 流式输出） | Token 参数 |
 | GET | `/api/history/{session_id}` | 获取对话历史 | 必须 |
-| DELETE | `/api/history/{session_id}` | 清除对话历史 | 必须 |
+| POST | `/api/history/delete` | 批量删除对话历史（逻辑删除） | 必须 |
 | GET | `/api/sources` | 获取支持的学科类别 | 无 |
 | GET | `/health` | 健康检查 | 无 |
 
@@ -507,7 +513,7 @@ POST `/query` 请求体：
 ### 方式三：命令行交互
 
 ```bash
-uv run python new_main.py          # 集成问答（BM25 + RAG + 对话历史）
+uv run python main.py               # 集成问答（BM25 + RAG + 对话历史）
 uv run python mysql_qa/main.py     # MySQL BM25 独立问答
 uv run python rag_qa/rag_main.py   # RAG 独立问答
 ```
@@ -635,7 +641,7 @@ LLM 根据查询特征自动从四种策略中选取：
 | `SQL_INJECTION_ATTEMPT` / `XSS_ATTEMPT` | 安全过滤器拦截 |
 | `RATE_LIMIT_EXCEEDED` | 速率限制触发 |
 | `UNAUTHORIZED_ACCESS` | 未认证访问受保护接口 |
-| `HISTORY_CLEARED` | 用户清除对话历史 |
+| `HISTORY_DELETED` | 用户批量删除对话历史 |
 
 每条审计日志携带 `tenant_id`、`user_id`、`ip_address`、`user_agent`、`event_type`、`detail`(JSON)，满足企业合规审计要求。
 
@@ -644,6 +650,7 @@ LLM 根据查询特征自动从四种策略中选取：
 - 每个会话最多保留最近 **5 轮** 对话，自动裁剪（`prune_old_records`），防止历史膨胀
 - 历史存储于 MySQL `conversations` 表，通过 `session_id` + `user_id` + `tenant_id` 三维隔离，杜绝跨用户/跨租户数据泄露
 - 历史以 `[{question, answer}, ...]` 形式注入 RAG 提示词模板，保持多轮上下文的连贯可追溯
+- **逻辑删除**：`is_deleted` 字段标记删除，查询自动过滤；前端支持多选 + 全选批量删除，`POST /api/history/delete` 接收 `{session_ids: [...]}`
 
 ## 评估
 
