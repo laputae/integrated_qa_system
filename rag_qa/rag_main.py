@@ -16,7 +16,7 @@ from base import Config, logger
 # in a way that prevents a segfault when transformers/sentence-transformers load later
 from core.vector_store import VectorStore
 from core.document_processor import process_documents
-from core.rag_system import RAGSystem
+from core.new_rag_system import RAGSystem
 from openai import OpenAI
 
 conf = Config()
@@ -40,29 +40,28 @@ def main(query_mode=True, directory_path="data"):
         client = None # 标记客户端不可用
 
 
-    # 定义 LLM 调用函数 (仅在需要时定义和使用)
+    # 定义 LLM 调用函数（流式输出，兼容 new_rag_system）
     def call_dashscope(prompt):
-        if not client: # 检查客户端是否可用
+        if not client:
             logger.error("LLM 客户端未初始化，无法调用 call_dashscope")
-            return f"错误: LLM客户端不可用"
+            yield f"错误: LLM客户端不可用"
+            return
         try:
             completion = client.chat.completions.create(
                 model=conf.LLM_MODEL,
                 messages=[
                     {"role": "system", "content": "你是一个有用的助手."},
                     {"role": "user", "content": prompt},
-                ]
-                # 可以添加 temperature 等参数
+                ],
+                timeout=30,
+                stream=True,
             )
-            # print(f'completion--》{completion}')
-            if completion.choices and completion.choices[0].message:
-                 return completion.choices[0].message.content
-            else:
-                 logger.error("LLM API 调用返回无效响应或空消息")
-                 return "错误: LLM返回无效响应"
+            for chunk in completion:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
         except Exception as e:
             logger.error(f"LLM API (call_dashscope) 调用失败: {e}")
-            return f"错误: 调用LLM失败 - {e}"
+            yield f"错误: 调用LLM失败 - {e}"
 
     # print(call_dashscope(prompt='你是谁'))
     # 初始化 VectorStore
@@ -146,10 +145,14 @@ def main(query_mode=True, directory_path="data"):
 
             try:
                 print("正在生成答案，请稍候...")
-                answer = rag_system.generate_answer(query, source_filter=source_filter)
                 print("-" * 30)
                 print(f"问题: {query}")
-                print(f"回答: {answer}")
+                print(f"回答: ", end="", flush=True)
+                answer = ""
+                for token in rag_system.generate_answer(query, source_filter=source_filter):
+                    print(token, end="", flush=True)
+                    answer += token
+                print()
                 print("-" * 30)
             except Exception as e:
                 logger.error(f"处理查询 '{query}' 时失败: {str(e)}")
