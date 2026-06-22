@@ -465,7 +465,7 @@ uv run python rag_qa/rag_main.py --data-processing
 ### 方式一：Web 全功能模式（推荐）
 
 ```bash
-uv run uvicorn app:app --host 0.0.0.0 --port 8000
+uv run uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
 启动后访问 `http://localhost:8000` 使用 Web 聊天界面。
@@ -491,7 +491,7 @@ API 端点：
 ### 方式二：SSE 流式接口
 
 ```bash
-uv run uvicorn api:app --host 0.0.0.0 --port 8000
+uv run uvicorn api:app --host 127.0.0.1 --port 8000
 ```
 
 POST `/query` 请求体：

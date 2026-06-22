@@ -78,6 +78,11 @@ class Config():
         # 最终候选数量
         self.CANDIDATE_M = self.config.getint('retrieval', 'candidate_m', fallback=2)
 
+        # 查询分类器配置
+        self.CLASSIFIER_CONFIDENCE_THRESHOLD = self.config.getfloat(
+            'classifier', 'confidence_threshold', fallback=0.8
+        )
+
         # Embedding 配置
         self.EMBEDDING_MODEL = self.config.get('embedding', 'model', fallback='bge-m3')
         self.EMBEDDING_BATCH_SIZE = self.config.getint('embedding', 'batch_size', fallback=32)

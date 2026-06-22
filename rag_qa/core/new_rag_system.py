@@ -142,6 +142,20 @@ class RAGSystem:
         logger.info(f"最终选取 {len(final_context_docs)} 个文档作为上下文")
         return final_context_docs
 
+    def _check_force_rag_keywords(self, query):
+        """领域关键词预检 — 命中则强制走 RAG，不受分类器结果影响"""
+        force_rag_patterns = [
+            "课程", "大纲", "教案", "讲义", "课件", "实训", "实验",
+            "项目", "案例", "作业", "考试", "考核", "认证",
+            "培训", "教学", "师资", "老师", "教师", "讲师",
+            "架构", "框架", "算法", "模型", "原理",
+            "实现", "部署", "优化", "调优",
+        ]
+        for pattern in force_rag_patterns:
+            if pattern in query:
+                return True
+        return False
+
     def generate_answer(self, query, source_filter=None, history=None):
         #   记录查询开始时间
         start_time = time.time()
@@ -158,22 +172,31 @@ class RAGSystem:
             history_context ="\n".join([f"Q:{h['question']}\nA:{h['answer']}" for h in history])
             logger.info(f'使用对话历史：{history_context[:50]}')
 
-        #   判断查询类型
-        query_category = self.query_classifier.predict_category(query)
-        logger.info(f"查询分类结果：{query_category} (查询: '{query}')")
-        #   如果查询属于“通用知识”类别，则直接使用 LLM 回答
-        if query_category == "通用知识":
-            logger.info("查询为通用知识，直接调用 LLM")
+        #   判断查询类型（带置信度阈值）
+        query_category, confidence = self.query_classifier.predict_with_confidence(query)
+        threshold = conf.CLASSIFIER_CONFIDENCE_THRESHOLD
+        force_rag = self._check_force_rag_keywords(query) or bool(source_filter)
+        logger.info(f"查询分类结果：{query_category} (置信度: {confidence:.4f}, 阈值: {threshold}) (查询: '{query}')")
+
+        skip_rag = (query_category == "通用知识" and confidence >= threshold and not force_rag)
+        if skip_rag:
+            logger.info(f"查询为通用知识（置信度 {confidence:.4f} >= {threshold}），直接调用 LLM")
             context = ''
         else:
-            logger.info("查询为专业咨询，执行 RAG 流程")
+            if source_filter:
+                logger.info(f"指定了学科过滤 source_filter={source_filter}，强制执行 RAG 流程")
+            elif force_rag:
+                logger.info("查询命中领域关键词，强制执行 RAG 流程")
+            elif query_category == "通用知识" and confidence < threshold:
+                logger.info(f"通用知识置信度 {confidence:.4f} 低于阈值 {threshold}，降级为 RAG 流程")
+            else:
+                logger.info("查询为专业咨询，执行 RAG 流程")
             #   选择检索策略
             strategy = self.strategy_selector.select_strategy(query)
             context_docs = self.retrieve_and_merge(query, source_filter=source_filter, strategy=strategy)
             if context_docs:
-                context = "\n\n".join([doc.page_content for doc in context_docs])  # 使用换行符分隔文档
+                context = "\n\n".join([doc.page_content for doc in context_docs])
                 logger.info(f"构建上下文完成，包含 {len(context_docs)} 个文档块")
-                # logger.debug(f"上下文内容:\n{context[:500]}...") # Debug 日志可以打印部分上下文
             else:
                 context = ""
                 logger.info("未检索到相关文档，上下文为空")

@@ -35,7 +35,7 @@ class QueryClassifier:
         # 初始化模型
         self.model = None
         # 确定设备（GPU 或 CPU）
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cpu")
         # 记录设备信息
         logger.info(f"使用设备: {self.device}")
         # 定义标签映射
@@ -54,7 +54,8 @@ class QueryClassifier:
             logger.info(f"加载模型: {self.model_path}")
         else:
             # 初始化新模型
-            self.model = BertForSequenceClassification.from_pretrained("../models/bert-base-chinese", num_labels=2)
+            bert_path = os.path.join(rag_qa_path, 'models', 'bert-base-chinese')
+            self.model = BertForSequenceClassification.from_pretrained(bert_path, num_labels=2)
             # print(f'self.model--》{self.model}')
             # 将模型移到指定设备
             self.model.to(self.device)
@@ -203,31 +204,37 @@ class QueryClassifier:
         logger.info("混淆矩阵:")
         logger.info(confusion_matrix(true_labels, pred_labels))
 
-    def predict_category(self, query):
-        # 检查模型是否加载
+    def predict_with_confidence(self, query):
+        """返回 (类别, 置信度) — 置信度为 softmax 概率"""
         if self.model is None:
-            # 模型未加载，记录错误
-            logger.error("模型未训练或加载")
-            # 默认返回通用知识
-            return "通用知识"
-        # 对查询进行编码
+            logger.error("模型未训练或加载，默认使用专业咨询以确保文档检索")
+            return "专业咨询", 0.0
         encoding = self.tokenizer(query, truncation=True, padding=True, max_length=128, return_tensors="pt")
-        # 将编码移到指定设备
         encoding = {k: v.to(self.device) for k, v in encoding.items()}
-        # 不计算梯度，进行预测
         with torch.no_grad():
-            # 获取模型输出
             outputs = self.model(**encoding)
-            # print(f'outputs--》{outputs}')
-            # logits = outputs.logits
-            # print(f'logits--》{logits}')
-            # # 获取预测结果
-            prediction = torch.argmax(outputs.logits, dim=1).item()
-        # 根据预测结果返回类别
-        return "专业咨询" if prediction == 1 else "通用知识"
+            probs = torch.softmax(outputs.logits, dim=1)
+            prediction = torch.argmax(probs, dim=1).item()
+            confidence = probs[0][prediction].item()
+        category = "专业咨询" if prediction == 1 else "通用知识"
+        return category, confidence
+
+    def predict_category(self, query):
+        """预测查询类别（兼容旧接口）"""
+        category, _ = self.predict_with_confidence(query)
+        return category
 if __name__ == '__main__':
-    query_classify = QueryClassifier()
+    model_path = os.path.join(current_dir, 'bert_query_classifier')
+    query_classify = QueryClassifier(model_path=model_path)
     # data_file = '../classify_data/model_generic_5000.json'
     # query_classify.train_model(data_file)
-    result = query_classify.predict_category(query="AI的课程大纲是什么")
-    print(result)
+    test_queries = [
+        "AI的课程大纲是什么",
+        "什么是Docker",
+        "1+2等于几",
+        "Transformer架构的原理",
+        "Python培训课程多少钱",
+    ]
+    for q in test_queries:
+        cat, conf = query_classify.predict_with_confidence(q)
+        print(f"查询: '{q}' -> {cat} (置信度: {conf:.4f})")
