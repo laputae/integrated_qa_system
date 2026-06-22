@@ -9,7 +9,6 @@ LlamaIndex 文档处理器 - 混合模式
 import os
 import re
 import sys
-import torch
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -22,7 +21,7 @@ sys.path.insert(0, _project_root)
 
 DATA_DIR = os.path.join(_rag_qa_path, 'data')
 MODEL_DIR = os.path.join(_rag_qa_path, 'models')
-USE_CUDA = torch.cuda.is_available()
+USE_CUDA = False
 
 # 原始加载器（保留 OCR 能力）
 from langchain_community.document_loaders import TextLoader

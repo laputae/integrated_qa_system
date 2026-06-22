@@ -1,5 +1,4 @@
 # -*- coding:utf-8 -*-
-import torch.cuda
 # 导入 Milvus 相关类，用于操作向量数据库
 from pymilvus import MilvusClient, DataType, AnnSearchRequest, WeightedRanker
 # 导入 Document 类，用于创建文档对象
@@ -69,7 +68,7 @@ class VectorStore:
         # 设置日志记录器
         self.logger = logger
         # 检查CUDA是否可用
-        self.device ='cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = 'cpu'
         # 日志提醒使用的是什么设备
         self.logger.info(f"使用设置：{self.device}")
         # 初始化 BGE-Reranker 模型，用于重排序检索结果
@@ -217,6 +216,11 @@ class VectorStore:
             self.logger.warning(f"Redis 缓存查询失败，降级为直接计算: {e}")
 
         query_embeddings = self.embedding_function([query])
+
+        # 确保稠密向量为 float32，避免 Milvus 报 FLOAT16 vs FLOAT_VECTOR 类型不匹配
+        dense_vec = query_embeddings["dense"][0]
+        if hasattr(dense_vec, 'dtype') and dense_vec.dtype != np.float32:
+            query_embeddings["dense"][0] = dense_vec.astype(np.float32)
 
         try:
             cache_value = {

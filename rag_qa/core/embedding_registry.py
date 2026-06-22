@@ -12,7 +12,6 @@ Each registered model provides:
 import json
 import os
 import sys
-import torch
 
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _rag_qa_path = os.path.dirname(_current_dir)
@@ -69,7 +68,7 @@ def create_milvus_model(name: str, model_path: str = None,
     if info["milvus_factory"] is None:
         raise ValueError(f"Model '{name}' does not support milvus interface.")
     if device is None:
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        device = 'cpu'
     if model_path is None:
         model_path = os.path.join(MODEL_DIR, name)
     if not os.path.exists(model_path):
@@ -87,7 +86,7 @@ def create_llamaindex_model(name: str, model_path: str = None,
     if info["llamaindex_factory"] is None:
         raise ValueError(f"Model '{name}' does not support llama_index interface.")
     if device is None:
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        device = 'cpu'
     if model_path is None:
         model_path = os.path.join(MODEL_DIR, name)
     if not os.path.exists(model_path):
