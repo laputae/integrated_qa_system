@@ -263,7 +263,11 @@ def batch_embed(
                 else:
                     sparse_batch.append({})
 
-            all_dense.extend(embeddings["dense"])
+            for vec in embeddings["dense"]:
+                if isinstance(vec, np.ndarray):
+                    all_dense.append(vec if vec.dtype == np.float32 else vec.astype(np.float32))
+                else:
+                    all_dense.append(np.array(vec, dtype=np.float32))
             all_sparse.extend(sparse_batch)
 
             if checkpoint_path:
