@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 import json
 # 导入 uuid 模块，用于生成唯一的会话 ID（session_id）
 import uuid
-from new_main import IntegratedQASystem
+from main import IntegratedQASystem
 
 # 创建一个 FastAPI 应用实例
 app = FastAPI(title="集成问答系统 API", description="基于 RAG + MySQL + Redis 的问答系统 FastAPI 接口")

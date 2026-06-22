@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any
 import time
 import re
 
-from new_main import IntegratedQASystem
+from main import IntegratedQASystem
 from gateway.middleware import GatewayMiddleware
 from gateway.auth import (
     create_access_token,

@@ -28,7 +28,7 @@ class RAGPrompts:
     #     # 定义假设问题生成的 Prompt 模板
     @staticmethod
     def rag_prompt():
-        '''添加了历史记录，注意用在：new_rag_system'''
+        '''添加了历史记录，注意用在：rag_system'''
         return PromptTemplate(
             template="""
         你是一个智能助手，负责帮助用户回答问题。请按照以下步骤处理：

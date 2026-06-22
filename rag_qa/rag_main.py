@@ -16,7 +16,7 @@ from base import Config, logger
 # in a way that prevents a segfault when transformers/sentence-transformers load later
 from core.vector_store import VectorStore
 from core.document_processor import process_documents
-from core.new_rag_system import RAGSystem
+from core.rag_system import RAGSystem
 from openai import OpenAI
 
 conf = Config()
@@ -40,7 +40,7 @@ def main(query_mode=True, directory_path="data"):
         client = None # 标记客户端不可用
 
 
-    # 定义 LLM 调用函数（流式输出，兼容 new_rag_system）
+    # 定义 LLM 调用函数（流式输出）
     def call_dashscope(prompt):
         if not client:
             logger.error("LLM 客户端未初始化，无法调用 call_dashscope")
