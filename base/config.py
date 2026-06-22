@@ -83,6 +83,11 @@ class Config():
             'classifier', 'confidence_threshold', fallback=0.8
         )
 
+        # 策略选择配置
+        self.STRATEGY_CACHE_TTL = self.config.getint(
+            'strategy', 'cache_ttl', fallback=604800
+        )
+
         # Embedding 配置
         self.EMBEDDING_MODEL = self.config.get('embedding', 'model', fallback='bge-m3')
         self.EMBEDDING_BATCH_SIZE = self.config.getint('embedding', 'batch_size', fallback=32)

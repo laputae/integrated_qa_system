@@ -30,7 +30,7 @@ class IntegratedQASystem:
             raise
 
         self.vector_store = VectorStore()
-        self.rag_system = RAGSystem(self.vector_store, self.call_dashscope)
+        self.rag_system = RAGSystem(self.vector_store, self.call_dashscope, redis_client=self.redis_client)
 
         Base.metadata.create_all(self.engine)
 

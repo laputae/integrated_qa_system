@@ -1,6 +1,8 @@
 # -*-coding:utf-8-*-
 # core/strategy_selector.py 源码
 import sys, os
+import re
+import hashlib
 # 获取当前文件所在目录的绝对路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # print(f'current_dir--》{current_dir}')
@@ -18,14 +20,91 @@ from base import logger, Config
 # 导入 OpenAI
 from openai import OpenAI
 
+conf = Config()
+
+
+class RulePreJudge:
+    """规则预判器 — 用本地规则快速判断检索策略，仅在把握大时返回策略名，否则返回 None"""
+
+    DIRECT_ENTITIES = re.compile(
+        r"学费|多少钱|价格|费用|大纲|课程|学科|课时|讲师|老师|教师|"
+        r"AI|Java|Python|大数据|人工智能|前端|后端|测试|运维|"
+        r"MySQL|Redis|Milvus|Docker|K8s|Spring|Vue|React"
+    )
+
+    # 不含"是什么"——太宽泛，"JAVA的课程大纲是什么"其实是具体实体查询
+    ABSTRACT_PATTERNS = re.compile(
+        r"什么是|的定义|有哪些种类|有哪些类型|有哪些应用|应用有哪些|"
+        r"的分类|的应用场景|的发展趋势|的优缺点|有哪些优势|有哪些特点"
+    )
+
+    COMPLEX_HOWTO = re.compile(r"如何|怎么|怎样")
+
+    COMPLEX_TECH_TERMS = re.compile(
+        r"部署|实现|优化|调优|配置|搭建|架构|设计|开发|集成|迁移|监控|调试"
+    )
+
+    def prejudge(self, query: str) -> str | None:
+        q = query.strip()
+
+        # 1. 多问号/多编号 → 子查询检索
+        if q.count("？") >= 2 or q.count("?") >= 2:
+            logger.info(f"规则预判命中(多问号) → 子查询检索 (查询: '{query}')")
+            return "子查询检索"
+        if re.search(r"(?:^|\n)\s*\d+[.、）\)]\s*\S", q):
+            logger.info(f"规则预判命中(编号分段) → 子查询检索 (查询: '{query}')")
+            return "子查询检索"
+
+        # 2. 极短查询 → 直接检索
+        if len(q) <= 8:
+            logger.info(f"规则预判命中(极短查询) → 直接检索 (查询: '{query}')")
+            return "直接检索"
+
+        # 3. 复杂操作提问（如何 + 技术词）→ 回溯问题检索
+        if self.COMPLEX_HOWTO.search(q) and self.COMPLEX_TECH_TERMS.search(q):
+            logger.info(f"规则预判命中(复杂操作) → 回溯问题检索 (查询: '{query}')")
+            return "回溯问题检索"
+
+        # 4. 具体实体查询 → 直接检索（先于抽象判断，避免含实体+抽象词时误判为HyDE）
+        if self.DIRECT_ENTITIES.search(q):
+            logger.info(f"规则预判命中(具体实体) → 直接检索 (查询: '{query}')")
+            return "直接检索"
+
+        # 5. 抽象概念提问 → 假设问题检索
+        if self.ABSTRACT_PATTERNS.search(q):
+            logger.info(f"规则预判命中(抽象概念) → 假设问题检索 (查询: '{query}')")
+            return "假设问题检索"
+
+        return None
+
 
 class StrategySelector:
-    def __init__(self):
+    def __init__(self, redis_client=None):
         # 初始化 OpenAI 客户端
         self.client = OpenAI(api_key=Config().DASHSCOPE_API_KEY,
                              base_url=Config().DASHSCOPE_BASE_URL)
         # 获取策略选择提示模板
         self.strategy_prompt_template = self._get_strategy_prompt()
+        # 规则预判器
+        self.rule_prejudge = RulePreJudge()
+        # Redis 缓存客户端（可选）
+        self.redis_client = redis_client
+
+    @staticmethod
+    def _hash_query(query: str) -> str:
+        return hashlib.md5(query.encode("utf-8")).hexdigest()
+
+    def _cache_get(self, query_hash: str) -> str | None:
+        if not self.redis_client:
+            return None
+        return self.redis_client.get_data(f"strategy:{query_hash}")
+
+    def _cache_set(self, query_hash: str, strategy: str):
+        if not self.redis_client:
+            return
+        self.redis_client.set_data(
+            f"strategy:{query_hash}", strategy, ttl=conf.STRATEGY_CACHE_TTL
+        )
 
     def call_dashscope(self, prompt):
         # 调用 DashScope API
@@ -95,16 +174,29 @@ class StrategySelector:
             ,
             input_variables=["query"],
         )
-    #   定义方法，选择检索策略
+
     def select_strategy(self, query):
-        # print(f'self.strategy_prompt_template-->{self.strategy_prompt_template}')
-        # print(f'self.strategy_prompt_template.format(query=query)-->{self.strategy_prompt_template.format(query=query)}')
-        # print("*"*80)
-        #   调用 LLM 获取检索策略
+        # 1. 规则预判
+        strategy = self.rule_prejudge.prejudge(query)
+        if strategy:
+            return strategy
+
+        # 2. Redis 缓存查询
+        query_hash = self._hash_query(query)
+        cached = self._cache_get(query_hash)
+        if cached:
+            logger.info(f"策略缓存命中 → {cached} (查询: '{query}')")
+            return cached
+
+        # 3. LLM 策略选择
         strategy = self.call_dashscope(self.strategy_prompt_template.format(query=query)).strip()
-        # print(f'strategy--》{strategy}')
-        logger.info(f"为查询 '{query}' 选择的检索策略：{strategy}")
+        logger.info(f"LLM 为查询 '{query}' 选择的检索策略：{strategy}")
+
+        # 写入缓存
+        self._cache_set(query_hash, strategy)
+
         return strategy
+
 
 if __name__ == '__main__':
     ss = StrategySelector()
