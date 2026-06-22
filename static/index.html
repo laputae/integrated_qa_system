@@ -375,10 +375,11 @@
         .session-controls {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 1rem;
+            margin-bottom: 0.5rem;
+            gap: 0.5rem;
         }
 
-        .new-session-btn, .clear-history-btn {
+        .new-session-btn, .delete-history-btn {
             background-color: var(--secondary-color);
             color: white;
             border: none;
@@ -387,9 +388,32 @@
             cursor: pointer;
             font-size: 0.9rem;
             transition: background-color 0.2s;
+            white-space: nowrap;
         }
 
-        .new-session-btn:hover, .clear-history-btn:hover { background-color: #5a6268; }
+        .new-session-btn:hover { background-color: #5a6268; }
+
+        .delete-history-btn {
+            background-color: #dc3545;
+        }
+
+        .delete-history-btn:hover { background-color: #c82333; }
+
+        .delete-history-btn:disabled {
+            background-color: #e9a0a8;
+            cursor: not-allowed;
+        }
+
+        .select-all-row {
+            display: flex;
+            align-items: center;
+            padding: 0.3rem 0.75rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--secondary-color);
+        }
+
+        .select-all-row input { margin-right: 0.4rem; accent-color: var(--primary-color); }
 
         .session-info {
             font-size: 0.9rem;
@@ -406,13 +430,24 @@
         .history-list { flex: 1; overflow-y: auto; }
 
         .history-item {
+            display: flex;
+            align-items: flex-start;
             padding: 0.75rem;
             border-bottom: 1px solid var(--border-color);
             cursor: pointer;
             transition: background-color 0.2s;
+            gap: 0.5rem;
         }
 
         .history-item:hover { background-color: var(--hover-color); }
+
+        .history-item input[type="checkbox"] {
+            margin-top: 0.15rem;
+            flex-shrink: 0;
+            accent-color: var(--primary-color);
+        }
+
+        .history-item-body { flex: 1; min-width: 0; }
 
         .history-question {
             font-weight: bold;
@@ -532,9 +567,13 @@
                     <button class="new-session-btn" id="newSessionBtn">
                         <i class="fas fa-plus"></i> 新会话
                     </button>
-                    <button class="clear-history-btn" id="clearHistoryBtn">
-                        <i class="fas fa-trash"></i> 清除历史
+                    <button class="delete-history-btn" id="deleteHistoryBtn" disabled>
+                        <i class="fas fa-trash"></i> 删除历史对话
                     </button>
+                </div>
+                <div class="select-all-row">
+                    <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                    <label for="selectAllCheckbox">全选</label>
                 </div>
                 <div class="history-title">历史会话</div>
                 <div class="history-list" id="historyList"></div>
@@ -806,7 +845,7 @@ async function initChat() {
         }
     });
     document.getElementById('newSessionBtn').addEventListener('click', createNewSession);
-    document.getElementById('clearHistoryBtn').addEventListener('click', clearHistory);
+    document.getElementById('deleteHistoryBtn').addEventListener('click', deleteSelectedHistory);
 }
 
 async function createNewSession() {
@@ -846,15 +885,19 @@ async function loadUserSessions() {
         data.sessions.forEach(s => {
             const div = document.createElement('div');
             div.className = 'history-item';
-            div.innerHTML = `<div class="history-question">会话 ${s.session_id.slice(0, 8)}...</div>
-                <div class="history-answer">共 ${s.count} 轮对话</div>`;
-            div.addEventListener('click', async () => {
+            div.innerHTML = `<input type="checkbox" class="session-checkbox" data-session-id="${s.session_id}" onchange="updateDeleteButtonState()">
+                <div class="history-item-body">
+                    <div class="history-question">会话 ${s.session_id.slice(0, 8)}...</div>
+                    <div class="history-answer">共 ${s.count} 轮对话</div>
+                </div>`;
+            div.querySelector('.history-item-body').addEventListener('click', async () => {
                 currentSessionId = s.session_id;
                 sessionInfo.textContent = `会话ID: ${currentSessionId.slice(0, 8)}...`;
                 await loadHistory();
             });
             historyList.appendChild(div);
         });
+        updateDeleteButtonState();
     } catch (e) {
         console.error('加载会话列表错误:', e);
     }
@@ -876,15 +919,52 @@ async function loadHistory() {
     }
 }
 
-async function clearHistory() {
-    if (!currentSessionId) return;
+function getSelectedSessionIds() {
+    const checkboxes = document.querySelectorAll('.session-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.dataset.sessionId);
+}
+
+function updateDeleteButtonState() {
+    const btn = document.getElementById('deleteHistoryBtn');
+    const selected = getSelectedSessionIds();
+    btn.disabled = selected.length === 0;
+    document.getElementById('selectAllCheckbox').checked =
+        document.querySelectorAll('.session-checkbox').length > 0 &&
+        selected.length === document.querySelectorAll('.session-checkbox').length;
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAllCheckbox').checked;
+    document.querySelectorAll('.session-checkbox').forEach(cb => {
+        cb.checked = selectAll;
+    });
+    updateDeleteButtonState();
+}
+
+async function deleteSelectedHistory() {
+    const sessionIds = getSelectedSessionIds();
+    if (sessionIds.length === 0) return;
+    if (!confirm(`确认删除选中的 ${sessionIds.length} 个会话的对话记录？`)) return;
     try {
-        await authFetch(`/api/history/${currentSessionId}`, { method: 'DELETE' });
-        historyList.innerHTML = '';
-        clearChatHistory();
-        chatHistory.innerHTML = `<div class="message system-message"><div class="message-content">历史记录已清除，有什么我可以帮您的吗？</div></div>`;
+        const resp = await authFetch('/api/history/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_ids: sessionIds }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            alert(data.detail || '删除失败');
+            return;
+        }
+        if (currentSessionId && sessionIds.includes(currentSessionId)) {
+            clearChatHistory();
+            currentSessionId = null;
+            sessionInfo.textContent = '';
+        }
+        await loadUserSessions();
     } catch (e) {
-        console.error('清除历史记录错误:', e);
+        console.error('删除历史记录错误:', e);
+        alert('删除失败，请重试');
     }
 }
 

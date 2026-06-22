@@ -283,19 +283,25 @@ async def get_history(session_id: str, user: dict = Depends(require_auth)):
     return {"session_id": session_id, "history": history}
 
 
-@app.delete("/api/history/{session_id}")
-async def clear_history(session_id: str, user: dict = Depends(require_auth)):
+class DeleteHistoryRequest(BaseModel):
+    session_ids: list[str]
+
+
+@app.post("/api/history/delete")
+async def delete_history(request: DeleteHistoryRequest, user: dict = Depends(require_auth)):
+    if not request.session_ids:
+        raise HTTPException(status_code=400, detail="请选择要删除的会话")
     audit = get_audit_logger()
     repo = ConversationRepository(SessionLocal)
-    success = repo.delete_session(session_id, user["user_id"],
-                                  tenant_id=user["tenant_id"])
-    if success:
-        audit.log(AuditEventType.HISTORY_CLEARED, user_id=user["user_id"],
+    count = repo.soft_delete_sessions(request.session_ids, user["user_id"],
+                                      tenant_id=user["tenant_id"])
+    if count > 0:
+        audit.log(AuditEventType.HISTORY_DELETED, user_id=user["user_id"],
                   tenant_id=user["tenant_id"],
-                  detail={"session_id": session_id})
-        return {"status": "success", "message": "历史记录已清除"}
+                  detail={"session_ids": request.session_ids, "count": count})
+        return {"status": "success", "message": f"已删除 {len(request.session_ids)} 个会话的对话记录"}
     else:
-        raise HTTPException(status_code=500, detail="清除历史记录失败")
+        raise HTTPException(status_code=404, detail="未找到可删除的对话记录")
 
 
 @app.get("/api/sources")

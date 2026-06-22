@@ -76,7 +76,7 @@ class IntegratedQASystem:
     def clear_session_history(self, session_id: str, user_id: int = 0,
                                tenant_id: int = 0) -> bool:
         repo = self._get_conversation_repo()
-        return repo.delete_session(session_id, user_id, tenant_id)
+        return repo.soft_delete_sessions([session_id], user_id, tenant_id) > 0
 
     def query(self, query, user_id: int = 0, tenant_id: int = 0,
               source_filter=None, session_id=None):

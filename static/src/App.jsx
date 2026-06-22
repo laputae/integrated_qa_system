@@ -89,16 +89,25 @@ const App = () => {
     setSourceFilter('');
   };
 
-  // 清除历史
-  const handleClearHistory = async () => {
+  // 删除历史对话
+  const handleDeleteHistory = async () => {
+    if (!confirm('确认删除当前会话的对话记录？')) return;
     try {
-      await fetch(`http://localhost:8000/history/${sessionId}`, { method: 'DELETE' });
+      const resp = await fetch(`http://localhost:8000/api/history/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_ids: [sessionId] }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        alert(data.detail || '删除失败');
+        return;
+      }
       setHistory([]);
       setAnswer('');
-      alert('历史记录已清除');
     } catch (err) {
-      console.error('清除历史失败:', err);
-      alert('清除历史失败');
+      console.error('删除历史失败:', err);
+      alert('删除历史失败');
     }
   };
 
@@ -164,10 +173,10 @@ const App = () => {
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">最近对话历史</h2>
             <button
-              onClick={handleClearHistory}
+              onClick={handleDeleteHistory}
               className="text-red-600 hover:text-red-800"
             >
-              清除历史
+              删除历史对话
             </button>
           </div>
           <div className="space-y-4">
