@@ -40,6 +40,9 @@ def _sparse_to_dict(sparse_row) -> dict:
         indices = sparse_row.indices if hasattr(sparse_row, 'indices') else sparse_row.col
         return dict(zip(indices, sparse_row.data))
     elif isinstance(sparse_row, dict):
+        # Redis JSON round-trip converts int keys to strings — convert them back
+        if sparse_row and not isinstance(next(iter(sparse_row.keys())), int):
+            return {int(k): float(v) for k, v in sparse_row.items()}
         return sparse_row
     else:
         return {}
@@ -237,37 +240,48 @@ class VectorStore:
         dense_query_vector = query_embeddings["dense"][0]
         # print(f'dense_query_vector--》{dense_query_vector.shape}')
         sparse_query_vector = _sparse_row_to_dict(query_embeddings["sparse"][0])
-        # print(f'sparse_query_vector-->{sparse_query_vector}')
         # 初始化过滤表达式，默认不过滤
         filter_expr = f"source == '{source_filter}'" if source_filter else ""
-        # print(f'filter_expr--》{filter_expr}')
-        # 创建稠密向量搜索请求
-        dense_request = AnnSearchRequest(
-            data=[dense_query_vector],
-            anns_field="dense_vector",
-            param={"metric_type": "IP", "params": {"nprobe": 10}},
-            limit=k,
-            expr=filter_expr
-        )
-        # 创建稀疏向量搜索请求
-        sparse_request = AnnSearchRequest(
-            data=[sparse_query_vector],
-            anns_field="sparse_vector",
-            param={"metric_type": "IP", "params": {}},
-            limit=k,
-            expr=filter_expr
-        )
 
-        # 创建加权排序器，稀疏向量权重 0.7，稠密向量权重 1.0
-        ranker = WeightedRanker(1.0, 0.7)
-        # 执行混合搜索，返回 Top-K 结果
-        results = self.client.hybrid_search(
-            collection_name=self.collection_name,
-            reqs=[dense_request, sparse_request],
-            ranker=ranker,
-            limit=k,
-            output_fields=["text", "parent_id", "parent_content", "source", "timestamp"]
-        )[0]
+        if not sparse_query_vector:
+            # 稀疏向量为空时降级为纯稠密检索（如缓存恢复后 key 类型错乱等边界情况）
+            self.logger.warning("稀疏查询向量为空，降级为纯稠密检索")
+            results = self.client.search(
+                collection_name=self.collection_name,
+                data=[dense_query_vector],
+                anns_field="dense_vector",
+                search_params={"metric_type": "IP", "params": {"nprobe": 10}},
+                limit=k,
+                filter=filter_expr,
+                output_fields=["text", "parent_id", "parent_content", "source", "timestamp"]
+            )[0]
+        else:
+            # 创建稠密向量搜索请求
+            dense_request = AnnSearchRequest(
+                data=[dense_query_vector],
+                anns_field="dense_vector",
+                param={"metric_type": "IP", "params": {"nprobe": 10}},
+                limit=k,
+                expr=filter_expr
+            )
+            # 创建稀疏向量搜索请求
+            sparse_request = AnnSearchRequest(
+                data=[sparse_query_vector],
+                anns_field="sparse_vector",
+                param={"metric_type": "IP", "params": {}},
+                limit=k,
+                expr=filter_expr
+            )
+            # 创建加权排序器，稀疏向量权重 0.7，稠密向量权重 1.0
+            ranker = WeightedRanker(1.0, 0.7)
+            # 执行混合搜索，返回 Top-K 结果
+            results = self.client.hybrid_search(
+                collection_name=self.collection_name,
+                reqs=[dense_request, sparse_request],
+                ranker=ranker,
+                limit=k,
+                output_fields=["text", "parent_id", "parent_content", "source", "timestamp"]
+            )[0]
         # print(f'results--》{results}')
         # print(f'results--》{type(results)}')
         # print(f'results--》{len(results)}')
