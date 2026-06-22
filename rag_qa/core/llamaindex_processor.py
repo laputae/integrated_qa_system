@@ -662,5 +662,27 @@ if __name__ == "__main__":
     print("=" * 50)
     print("查询测试")
     print("=" * 50)
+    from llama_index.core import Settings
+    from llama_index.llms.openai.base import OpenAI as LlamaOpenAI
+    from llama_index.core.llms import LLMMetadata
+    from base.config import Config
+
+    class DeepSeekLLM(LlamaOpenAI):
+        @property
+        def metadata(self):
+            return LLMMetadata(
+                context_window=128000,
+                num_output=self.max_tokens or -1,
+                model_name=self.model,
+                is_chat_model=True,
+                is_function_calling_model=True,
+            )
+
+    conf = Config()
+    Settings.llm = DeepSeekLLM(
+        model=conf.LLM_MODEL,
+        api_key=conf.DASHSCOPE_API_KEY,
+        api_base=conf.DASHSCOPE_BASE_URL,
+    )
     response = processor.query("AI学科的课程内容是什么")
     print(response)
