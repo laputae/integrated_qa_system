@@ -1,6 +1,19 @@
-# EduRAG — 集成智能问答系统
+# EduRAG — 企业级智能问答系统
 
-基于 **BM25 + RAG + LLM** 双级检索架构的智能教育问答系统，支持 MySQL 精确匹配与 Milvus 向量语义检索的自动切换，提供流式 WebSocket 和 SSE 接口。
+基于 **BM25 + RAG + LLM** 双级检索架构的企业级智能教育问答系统，面向生产环境设计，具备多租户隔离、JWT 认证鉴权、安全审计、速率限制等完整的企业級基础设施。支持 MySQL 精确匹配与 Milvus 向量语义检索的自动切换，提供流式 WebSocket 和 SSE 接口。
+
+## 企业级特性
+
+| 特性 | 实现 |
+|------|------|
+| **多租户架构** | `tenant_id` FK 级联隔离，数据完全按租户划分，支持租户启用/禁用 |
+| **认证鉴权** | JWT Access Token + Refresh Token 双令牌机制，Redis 黑名单即时失效，bcrypt(cost=12) 密码哈希 |
+| **安全防护** | 网关三层中间件：SQL注入/XSS过滤 → 分级速率限制 → JWT校验 + 黑名单检查 |
+| **审计追踪** | 全事件审计日志（登录/登出/Token刷新/攻击拦截/限流触发/历史清除），持久化 MySQL |
+| **会话管理** | 多轮对话历史持久化，session_id + user_id + tenant_id 三维隔离，自动裁剪保留最近 N 轮 |
+| **高可用** | 数据库连接池（pool_size=10, max_overflow=20, pool_pre_ping, pool_recycle），Redis 缓存 + 限流 |
+| **生产韧性** | 批量嵌入 Checkpoint/Resume 断点续传，增量文档加载零冗余处理，原子文件写入 |
+| **GPU 加速** | PyTorch cu126 (CUDA 12.6) 原生支持，覆盖 BERT/BGE/Reranker/OCR 全链路推理
 
 ## 架构概览
 
@@ -8,32 +21,38 @@
 用户提问
   │
   ▼
-┌─────────────────────────────────────────────────────┐
-│                   FastAPI 网关层                      │
-│   WebSocket / SSE 流式接口  │  REST API  │  静态前端   │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      FastAPI 网关层                            │
+│   WebSocket / SSE 流式  │  REST API  │  JWT认证  │  静态前端    │
+│   中间件: 安全过滤 → 速率限制 → JWT校验 → 审计日志              │
+└──────────────────────────────────────────────────────────────┘
   │
   ▼
-┌─────────────────────────────────────────────────────┐
-│               IntegratedQASystem 调度层               │
-│         会话历史管理  │  问候语检测  │  双路路由        │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                 IntegratedQASystem 调度层                      │
+│        会话历史管理  │  问候语检测  │  双路路由                  │
+└──────────────────────────────────────────────────────────────┘
   │
-  ├─── Tier 1: BM25 精确匹配 ──────────────────────────┐
-  │    MySQL (jpkb 问答表)  │  jieba 分词  │  Redis 缓存 │
-  │    相似度 ≥ 0.85 → 直接返回答案                     │
-  └────────────────────────────────────────────────────┤
+  ├─── Tier 1: BM25 精确匹配 ──────────────────────────────────┐
+  │    MySQL (jpkb 问答表)  │  jieba 分词  │  Redis 缓存         │
+  │    相似度 ≥ 0.85 → 直接返回答案                              │
+  └─────────────────────────────────────────────────────────────┤
   │
-  └─── Tier 2: RAG 语义检索 ──────────────────────────┐
-       查询分类(BERT) → 策略选择(LLM) → 混合检索(Milvus)  │
-       → 重排序(BGE-Reranker) → LLM 流式生成            │
-  └────────────────────────────────────────────────────┘
+  └─── Tier 2: RAG 语义检索 ───────────────────────────────────┐
+       查询分类(BERT) → 策略选择(LLM) → 混合检索(Milvus/BGE-M3)  │
+       → 重排序(BGE-Reranker) → LLM 流式生成                     │
+       ┌───────────────────────────────────────────────────────┐
+       │  嵌入模型注册表 (BGE-M3 / BGE-Large-ZH / Text2Vec)     │
+       │  增量文档加载 (SQLite哈希追踪 + LlamaIndex ref_doc_id)  │
+       │  批量嵌入 + Checkpoint/Resume                          │
+       └───────────────────────────────────────────────────────┘
+  └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 双级检索流程
 
 1. **BM25 精确匹配**：用户问题经 jieba 分词后，与 MySQL 中预存问答对进行 BM25 评分，经 softmax 归一化后若最高分 ≥ 0.85，直接返回缓存答案
-2. **RAG 语义检索**：BM25 置信度不足时自动回落，由 BERT 分类器判断查询类型，LLM 选择检索策略，Milvus 混合检索（稠密 + 稀疏向量）后经 CrossEncoder 重排序，最终由 LLM 流式生成答案
+2. **RAG 语义检索**：BM25 置信度不足时自动回落，由 BERT 分类器判断查询类型，LLM 选择检索策略（直接检索 / HyDE / 子查询 / 回溯），Milvus 混合检索（稠密 + 稀疏向量）后经 CrossEncoder 重排序，最终由 LLM 流式生成答案
 
 ## 项目结构
 
@@ -43,7 +62,7 @@ integrated_qa_system/
 │   ├── config.py                  # 配置管理（读取 config.ini）
 │   └── logger.py                  # 日志系统
 │
-├── db_models/                     # SQLAlchemy 数据模型
+├── db_models/                     # SQLAlchemy 数据模型（5 张 ORM 表）
 │   ├── base.py                    # 引擎、Session、Base 基类
 │   ├── tenant.py                  # Tenant 模型（多租户）
 │   ├── user.py                    # User 模型（用户认证）
@@ -58,44 +77,50 @@ integrated_qa_system/
 │   └── audit_repo.py              # 审计日志写入
 │
 ├── gateway/                       # API 网关层
-│   ├── auth.py                    # JWT 签发/校验、密码哈希
+│   ├── auth.py                    # JWT 签发/校验（Access + Refresh Token）、密码哈希
 │   ├── deps.py                    # FastAPI 依赖注入（get_current_user）
-│   ├── middleware.py              # 网关中间件
-│   ├── security.py                # 输入安全过滤
-│   ├── rate_limiter.py            # 速率限制
-│   └── audit.py                   # 审计日志器
+│   ├── middleware.py               # 三层中间件（安全过滤 → 速率限制 → JWT校验）
+│   ├── security.py                # SQL注入/XSS 输入安全过滤
+│   ├── rate_limiter.py            # 分级速率限制（登录/注册/查询/流式）
+│   └── audit.py                   # 审计日志器（事件类型枚举 + 日志写入）
 │
-├── mysql_qa/                      # MySQL QA 模块（Tier 1）
+├── mysql_qa/                      # Tier 1: BM25 精确匹配
 │   ├── main.py                    # MySQLQASystem 独立 CLI
-│   ├── db/mysql_client.py         # MySQL 查询（jpkb 表）
-│   ├── cache/redis_client.py      # Redis 缓存 + Token 黑名单 + 限流
-│   ├── retrieval/bm25_search.py   # BM25Okapi + Softmax 搜索
-│   ├── utils/preprocess.py        # jieba 中文分词
-│   └── data/                      # 问答对 CSV 数据
+│   ├── db/mysql_client.py         # MySQL 查询（jpkb 表，raw SQL）
+│   ├── cache/redis_client.py      # Redis 缓存 + Token 黑名单 + 限流计数
+│   ├── retrieval/bm25_search.py   # BM25Okapi + Softmax 归一化
+│   └── utils/preprocess.py        # jieba 中文分词
 │
-├── rag_qa/                        # RAG 模块（Tier 2）
+├── rag_qa/                        # Tier 2: RAG 语义检索
 │   ├── rag_main.py                # RAG CLI（数据预处理 / 交互查询）
 │   ├── core/
 │   │   ├── new_rag_system.py      # RAGSystem v2（流式 + 对话历史）
+│   │   ├── rag_system.py          # RAGSystem v1（原始版本）
 │   │   ├── vector_store.py        # Milvus 向量库 + BGE-M3 混合检索 + 重排序
+│   │   ├── embedding_registry.py  # 嵌入模型注册表（多模型 A/B 切换）+ 批量嵌入 + Checkpoint
+│   │   ├── llamaindex_processor.py # LlamaIndex 文档处理器（OCR加载 → 切分 → 批量索引）
+│   │   ├── ingestion_tracker.py   # SQLite 文件哈希追踪（增量加载：NEW/MODIFIED/UNCHANGED/DELETED）
+│   │   ├── document_processor.py  # 文档加载 + 父子块分割（传统管线）
 │   │   ├── query_classifier.py    # BERT 查询分类器（通用/专业）
 │   │   ├── strategy_selector.py   # LLM 检索策略选择器
-│   │   ├── prompts.py             # LangChain Prompt 模板
-│   │   ├── document_processor.py  # 文档加载 + 父子块分割
-│   │   └── llamaindex_processor.py # LlamaIndex 文档处理后端
+│   │   └── prompts.py             # LangChain Prompt 模板
 │   ├── edu_document_loaders/      # 自定义文档加载器（含 OCR）
 │   ├── edu_text_spliter/          # 中文感知文本分割器
 │   ├── rag_assesment/             # RAGAS 质量评估
 │   ├── classify_data/             # 分类器训练数据
 │   └── models/                    # 本地模型文件
-│       ├── bge-m3/                # BGE-M3 嵌入模型
+│       ├── bge-m3/                # BGE-M3 嵌入模型（稠密1024维 + 稀疏）
 │       ├── bge-reranker-large/    # BGE-Reranker 交叉编码器
-│       └── bert-base-chinese/     # BERT 中文基础模型
+│       ├── bert-base-chinese/     # BERT 中文基础模型
+│       ├── bge-large-zh/          # BGE-Large-ZH 嵌入模型（1024维，可选）
+│       └── text2vec-large-chinese/ # Text2Vec 嵌入模型（768维，可选）
 │
 ├── scripts/                       # 运维脚本
 │   └── seed_default_tenant.py     # 一键建表 + 写入默认租户
 │
 ├── static/                        # Web 前端（HTML/CSS/JS）
+├── tests/                         # 测试
+│   └── test_document_quality.py   # 文档质量评估冒烟测试
 ├── new_main.py                    # 主调度器（IntegratedQASystem）
 ├── app.py                         # FastAPI 主入口（WebSocket + REST + 静态服务）
 ├── api.py                         # FastAPI SSE 流式接口
@@ -106,12 +131,13 @@ integrated_qa_system/
 
 ## 环境要求
 
-- **Python** ≥ 3.11, &lt; 3.13
+- **Python** ≥ 3.11, < 3.13
 - **uv**（Python 包管理器，推荐）
 - **MySQL** 5.7+（建议 8.0）
 - **Redis** 6.0+
 - **Milvus** 2.4+（建议使用 Milvus Lite 或 Standalone）
-- **GPU**（可选，加速 BERT 分类器、BGE 嵌入、CrossEncoder 推理）
+- **GPU**（可选，CUDA 12.6+，加速 BERT 分类器、BGE 嵌入、CrossEncoder 推理）
+- **CUDA**：PyTorch 使用 cu126 索引（`https://download.pytorch.org/whl/cu126`），内置 CUDA 12.6 运行时
 
 ## 安装
 
@@ -120,13 +146,15 @@ integrated_qa_system/
 git clone <repo-url>
 cd integrated_qa_system
 
-# 2. 安装依赖（uv 自动创建虚拟环境）
+# 2. 安装依赖（uv 自动创建虚拟环境，自动从 cu126 索引安装 torch）
 uv sync
 
 # 3. 下载本地模型（放到 rag_qa/models/ 目录）
-#   - BAAI/bge-m3              → rag_qa/models/bge-m3/
-#   - BAAI/bge-reranker-large  → rag_qa/models/bge-reranker-large/
+#   - BAAI/bge-m3                → rag_qa/models/bge-m3/
+#   - BAAI/bge-reranker-large    → rag_qa/models/bge-reranker-large/
 #   - google-bert/bert-base-chinese → rag_qa/models/bert-base-chinese/
+#   - (可选) BAAI/bge-large-zh    → rag_qa/models/bge-large-zh/
+#   - (可选) shibing624/text2vec-large-chinese → rag_qa/models/text2vec-large-chinese/
 ```
 
 ## 配置
@@ -157,16 +185,18 @@ model = deepseek-v4-pro
 dashscope_api_key =           # 你的 API Key（也支持环境变量 DEEPSEEK_API_KEY）
 dashscope_base_url = https://api.deepseek.com
 
+[embedding]
+model = bge-m3                # 可选: bge-m3 | bge-large-zh | text2vec-large-chinese
+batch_size = 32
+checkpoint_dir = checkpoints/embedding
+cache_ttl = 86400
+
 [retrieval]
 parent_chunk_size = 1200
 child_chunk_size = 300
 chunk_overlap = 50
 retrieval_k = 5
 candidate_m = 2
-
-[app]
-valid_sources = ["ai", "java", "test", "ops", "bigdata"]
-customer_service_phone = 12345678
 
 [auth]
 jwt_secret_key = <your-random-64-char-hex-key>
@@ -177,15 +207,25 @@ bcrypt_cost_factor = 12
 [tenant]
 default_tenant_name = default
 
+[app]
+valid_sources = ["ai", "java", "test", "ops", "bigdata"]
+customer_service_phone = 12345678
+
 [logger]
 log_file = logs/app.log
 ```
 
-> **安全提示**：生产环境请通过环境变量注入敏感信息（API Key、密码），`config.py` 已支持 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL` 等环境变量覆盖。
+> **安全提示**：生产环境请通过环境变量注入敏感信息（API Key、密码），`config.py` 已支持 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`JWT_SECRET_KEY` 等环境变量覆盖。
 
 ## 数据库初始化
 
-系统使用 **MySQL** 存储结构化数据（6 张表）和 **Milvus** 存储向量数据（1 个 Collection）。
+系统使用 **MySQL** 存储结构化数据（6 张表）和 **Milvus** 存储向量数据（1 个 Collection），外加 **SQLite** 追踪文件摄入状态。
+
+| 存储 | 用途 | 管理方式 |
+|------|------|----------|
+| MySQL | 业务数据（租户/用户/会话/令牌/审计） + BM25 问答对 | 5 ORM + 1 raw SQL |
+| Milvus | 文档向量（稠密 + 稀疏混合嵌入） | pymilvus / LlamaIndex |
+| SQLite | 文件摄入追踪（哈希、状态、块计数） | IngestionTracker |
 
 ### 创建 MySQL 数据库
 
@@ -309,7 +349,7 @@ ON DUPLICATE KEY UPDATE name = name;
 |------|------|----------|
 | `jpkb` | BM25 精确匹配问答对 | 手动 SQL / CSV 导入 |
 | `tenants` | 多租户隔离 | SQLAlchemy ORM（自动建表） |
-| `users` | 用户注册/登录 | SQLAlchemy ORM（自动建表） |
+| `users` | 用户注册/登录（bcrypt 密码哈希） | SQLAlchemy ORM（自动建表） |
 | `conversations` | 对话历史（按 session_id + user_id + tenant_id 隔离） | SQLAlchemy ORM（自动建表） |
 | `refresh_tokens` | JWT Refresh Token 持久化 | SQLAlchemy ORM（自动建表） |
 | `audit_logs` | 用户操作审计日志 | SQLAlchemy ORM（自动建表） |
@@ -368,23 +408,37 @@ rag_qa/data/
 └── bigdata_data/     # 大数据学科文档
 ```
 
-**执行构建**：
+**方式一：传统全量构建**（使用 pymilvus 传统管线）：
 
 ```bash
-# 使用默认文档目录（rag_qa/data/）
-uv run python rag_qa/rag_main.py --data-processing
-
-# 指定自定义文档目录
-uv run python rag_qa/rag_main.py --data-processing --data-dir /path/to/your/documents
+uv run python rag_qa/rag_main.py --data-processing --data-dir rag_qa/data
 ```
-
-`--data-dir` 默认为 `./data`（相对于项目根目录），即 `rag_qa/data/`。
 
 此命令将：
 - 加载各学科文档（MD / PDF / DOCX / PPTX / 图片）
 - 通过 OCR 提取图片中的文字
 - 执行父子块切分（父块 1200 字符，子块 300 字符）
 - 子块写入 Milvus 向量库（BGE-M3 稠密 + 稀疏混合嵌入）
+
+**方式二：增量构建**（使用 LlamaIndex + SQLite 哈希追踪，推荐重复使用）：
+
+```python
+from rag_qa.core.llamaindex_processor import incremental_process_and_index
+
+# 首次运行 — 全部文件标记为 NEW，执行全量索引
+result = incremental_process_and_index("rag_qa/data/ai_data")
+# => {"new": 50, "modified": 0, "deleted": 0, "unchanged": 0, "total_chunks": 300}
+
+# 第二次运行 — 未修改文件标记为 UNCHANGED，跳过处理
+result = incremental_process_and_index("rag_qa/data/ai_data")
+# => {"new": 0, "modified": 0, "deleted": 0, "unchanged": 50, "total_chunks": 0}
+```
+
+增量管线自动分类文件为 NEW / MODIFIED / UNCHANGED / DELETED：
+- **NEW** → OCR + 切分 + 插入新向量
+- **MODIFIED** → 先删除旧向量（通过 `ref_doc_id`），再重新处理
+- **UNCHANGED** → 直接跳过，零开销
+- **DELETED** → 从 Milvus 中删除对应向量
 
 ## 首次启动
 
@@ -473,9 +527,20 @@ uv run python rag_qa/rag_main.py   # RAG 独立问答
 
 OCR 引擎：优先使用 RapidOCR Paddle（GPU 加速），fallback 为 RapidOCR ONNX Runtime（CPU）。
 
+### 文档质量评估 — 数据治理
+
+`estimate_document_quality()` 对 OCR 清洗后的文本进行三级评分（0-1），作为企业数据治理的质量门槛：
+
+- **文本长度充足度**（权重 0.30）：评估文档段落是否达到有效检索的最小长度
+- **有效字符占比**（权重 0.40）：中文字符 + 拉丁字母 + 数字的实际占比
+- **OCR 噪音伪影**（权重 0.30）：检测连续重复字符、非标准符号、行结构异常
+
+评分 < 0.3 的文档标记为 `is_low_quality`，可在后续管线中过滤或降权处理，避免低质量 OCR 文档污染检索结果。
+
 ### 文本分割
 
 - **ChineseRecursiveTextSplitter**：中文感知的递归分割器，使用 `。！？；，` 等中文标点作为分隔符
+- **MarkdownTextSplitter**：对 `.md` 文件自动切换 Markdown 感知分割
 - **AliTextSplitter**：基于 ModelScope BERT 文档分割模型的语义分割
 
 ### 父子块策略
@@ -484,9 +549,52 @@ OCR 引擎：优先使用 RapidOCR Paddle（GPU 加速），fallback 为 RapidOC
 - **子块**（300 字符，50 重叠）：写入 Milvus 索引，提高检索精度
 - 检索时命中的子块溯源到对应的父块，以完整父块作为 LLM 的输入上下文
 
+### 嵌入模型注册表
+
+通过 `embedding_registry.py` 支持多嵌入模型 A/B 切换，在 `config.ini` 的 `[embedding] model` 中指定：
+
+| 模型 | 维度 | 稀疏向量 | 后端 |
+|------|------|---------|------|
+| `bge-m3` | 1024 | 支持 | milvus_model (BGEM3EmbeddingFunction) + LlamaIndex |
+| `bge-large-zh` | 1024 | 不支持 | sentence-transformers + LlamaIndex |
+| `text2vec-large-chinese` | 768 | 不支持 | sentence-transformers + LlamaIndex |
+
+模型统一通过 `create_milvus_model()` / `create_llamaindex_model()` 工厂方法创建，调用方无需关心具体后端差异。
+
+### 批量嵌入与 Checkpoint/Resume — 生产韧性
+
+`batch_embed()` 提供企业级批量嵌入能力，应对大规模文档处理和运行中断：
+
+- **tqdm 进度条**：实时显示 batch 处理进度，便于运维监控
+- **Checkpoint 断点续传**：每完成一个 batch 原子写入 JSON checkpoint，进程崩溃或 OOM Kill 后设置 `resume=True` 从断点继续，已完成的 batch 跳过不重复计算
+- **原子写入**：先写 `.tmp` 再 `os.replace`，杜绝 checkpoint 损坏导致的进度丢失
+- **自动清理**：全部 batch 完成后自动删除 checkpoint，避免残留
+- **异常隔离**：单个 batch 失败抛出明确错误并保留 checkpoint，修复后可精确续传
+
+**生产场景**：百万级文档嵌入耗时数小时，进程意外退出后重启即可从断点恢复，零浪费。
+
+### 增量文档加载（IngestionTracker）— 生产级效率
+
+`IngestionTracker` 使用 SQLite 追踪每个文件的摄入状态，实现企业级增量处理——避免每次全量重建：
+
+- **内容哈希**：SHA-256 流式计算（64KB 分块），精准检测文件变更
+- **ref_doc_id**：从归一化路径派生的稳定 ID，支持 LlamaIndex 文档级原子删除/更新
+- **状态管理**：active（已索引）/ deleted（已删除），软删除保留审计线索
+- **WAL 模式**：SQLite WAL 日志 + NORMAL 同步，兼顾写入性能和崩溃恢复
+
+增量管线（`incremental_process_and_index`）：
+1. 扫描目录 → SHA-256 对比 SQLite → 四类分类
+2. DELETED → 通过 `ref_doc_id` 从 Milvus 原子删除
+3. MODIFIED → 先删旧块，避免僵尸向量
+4. NEW + MODIFIED → OCR 加载 → 文本清洗 → 质量评估 → 父子块切分 → LlamaIndex 批量插入
+5. UNCHANGED → 直接跳过，零计算开销
+6. 更新 SQLite 追踪记录（单个事务）
+
+**生产收益**：大型文档库（10K+ 文件）增量模式下仅处理变更文件，处理时间从小时级降至分钟级。
+
 ### 混合检索与重排序
 
-1. **BGE-M3 嵌入**：同时生成稠密向量（768 维）和稀疏向量（词权重）
+1. **BGE-M3 嵌入**：同时生成稠密向量（1024 维）和稀疏向量（词权重）
 2. **加权混合检索**：Milvus 中稠密权重 1.0，稀疏权重 0.7
 3. **CrossEncoder 重排序**：BGE-Reranker-Large 对候选文档精排，取 Top-M 作为最终上下文
 
@@ -501,11 +609,41 @@ LLM 根据查询特征自动从四种策略中选取：
 | 子查询检索 | 复杂多问，拆分为子问题分别检索 |
 | 回溯检索 | 专业术语问题，扩展别名后检索 |
 
+### 网关安全体系（企业级防护）
+
+三层中间件（`gateway/middleware.py`）对所有 `/api/` 请求依次执行，构建纵深防御：
+
+```
+请求 → Layer 1: SecurityFilter → Layer 2: RateLimiter → Layer 3: AuthMiddleware → 业务层
+               │                        │                       │
+               ├─ SQL注入检测           ├─ 登录: IP限流         ├─ Bearer Token 提取
+               ├─ XSS 攻击检测          ├─ 注册: IP限流         ├─ Token 黑名单检查 (Redis)
+               ├─ 恶意请求体拦截        ├─ 查询: 用户+租户限流   ├─ JWT 签名校验
+               └─ 审计日志记录          ├─ 流式: 用户+租户限流   └─ 用户信息注入 request.scope
+                                        └─ 审计日志记录
+```
+
+**白名单路径**（跳过认证）：`/api/auth/login`、`/api/auth/register`、`/api/auth/refresh`、`/health`、`/api/sources`
+
+**审计事件覆盖**（`gateway/audit.py`）：
+
+| 事件类型 | 触发场景 |
+|---------|---------|
+| `LOGIN_SUCCESS` / `LOGIN_FAILED` | 用户登录成功/失败 |
+| `REGISTER_SUCCESS` | 用户注册成功 |
+| `TOKEN_REFRESH` / `LOGOUT` | Token 刷新 / 用户登出 |
+| `SQL_INJECTION_ATTEMPT` / `XSS_ATTEMPT` | 安全过滤器拦截 |
+| `RATE_LIMIT_EXCEEDED` | 速率限制触发 |
+| `UNAUTHORIZED_ACCESS` | 未认证访问受保护接口 |
+| `HISTORY_CLEARED` | 用户清除对话历史 |
+
+每条审计日志携带 `tenant_id`、`user_id`、`ip_address`、`user_agent`、`event_type`、`detail`(JSON)，满足企业合规审计要求。
+
 ### 对话历史管理
 
-- 每个会话最多保留最近 **5 轮** 对话
-- 历史存储于 MySQL `conversations` 表，通过 `session_id` + `user_id` + `tenant_id` 联合隔离
-- 历史以 `[{question, answer}, ...]` 形式注入 RAG 提示词模板
+- 每个会话最多保留最近 **5 轮** 对话，自动裁剪（`prune_old_records`），防止历史膨胀
+- 历史存储于 MySQL `conversations` 表，通过 `session_id` + `user_id` + `tenant_id` 三维隔离，杜绝跨用户/跨租户数据泄露
+- 历史以 `[{question, answer}, ...]` 形式注入 RAG 提示词模板，保持多轮上下文的连贯可追溯
 
 ## 评估
 
@@ -525,5 +663,6 @@ uv run python rag_as.py
 - [BGE-M3](https://huggingface.co/BAAI/bge-m3) — 多语言混合嵌入模型
 - [BGE-Reranker](https://huggingface.co/BAAI/bge-reranker-large) — 交叉编码器重排序
 - [Milvus](https://milvus.io/) — 向量数据库
+- [LlamaIndex](https://www.llamaindex.ai/) — 数据索引框架
 - [LangChain](https://www.langchain.com/) — LLM 应用框架
 - [RapidOCR](https://github.com/RapidAI/RapidOCR) — OCR 引擎
