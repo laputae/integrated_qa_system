@@ -18,7 +18,11 @@ from langchain_core.prompts import PromptTemplate
 # 导入日志和配置
 from base import logger, Config
 # 导入 OpenAI
-from openai import OpenAI
+from openai import (
+    OpenAI, APITimeoutError, APIConnectionError,
+    InternalServerError, RateLimitError,
+)
+import time
 
 conf = Config()
 
@@ -107,31 +111,37 @@ class StrategySelector:
         )
 
     def call_dashscope(self, prompt):
-        # 调用 DashScope API
-        try:
-            # 创建聊天完成请求
-            completion = self.client.chat.completions.create(
-                model=Config().LLM_MODEL,
-                messages=[
-                    {"role": "system", "content": "你是一个有用的助手。"},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.1
-            )
-            # print(f'completion--》{completion}')
-            # print('*'*80)
-            # print(f'completion.choices -->{completion.choices }')
-            # print('*'*80)
-            # print(f'completion.choices[0].message -->{completion.choices[0].message}')
-            # print('*' * 80)
-            # print(f'completion.choices[0].message.content -->{completion.choices[0].message.content}')
-            # 返回完成结果
-            return completion.choices[0].message.content if completion.choices else "直接检索"
-        except Exception as e:
-            # 记录 API 调用失败
-            logger.error(f"DashScope API 调用失败: {e}")
-            # 默认返回直接检索
-            return "直接检索"
+        max_retries = conf.LLM_MAX_RETRIES
+        base_delay = conf.LLM_RETRY_BASE_DELAY
+        max_delay = conf.LLM_RETRY_MAX_DELAY
+
+        for attempt in range(max_retries):
+            try:
+                completion = self.client.chat.completions.create(
+                    model=conf.LLM_MODEL,
+                    messages=[
+                        {"role": "system", "content": "你是一个有用的助手。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.1,
+                )
+                return completion.choices[0].message.content if completion.choices else "直接检索"
+            except (APITimeoutError, APIConnectionError,
+                    InternalServerError, RateLimitError,
+                    ConnectionError, TimeoutError) as e:
+                if attempt < max_retries - 1:
+                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    logger.warning(
+                        f"DashScope API 调用失败 (attempt {attempt+1}/{max_retries}): {e}，"
+                        f"{delay:.1f}s 后重试..."
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(f"DashScope API 调用失败，已达最大重试次数 {max_retries}: {e}")
+                    return "直接检索"
+            except Exception as e:
+                logger.error(f"DashScope API 调用失败（不可重试）: {e}")
+                return "直接检索"
 
 
     def _get_strategy_prompt(self):

@@ -17,7 +17,11 @@ from base import Config, logger
 from core.vector_store import VectorStore
 from core.document_processor import process_documents
 from core.rag_system import RAGSystem
-from openai import OpenAI
+from openai import (
+    OpenAI, APITimeoutError, APIConnectionError,
+    InternalServerError, RateLimitError,
+)
+import time
 
 conf = Config()
 
@@ -46,22 +50,43 @@ def main(query_mode=True, directory_path="data"):
             logger.error("LLM 客户端未初始化，无法调用 call_dashscope")
             yield f"错误: LLM客户端不可用"
             return
-        try:
-            completion = client.chat.completions.create(
-                model=conf.LLM_MODEL,
-                messages=[
-                    {"role": "system", "content": "你是一个有用的助手."},
-                    {"role": "user", "content": prompt},
-                ],
-                timeout=30,
-                stream=True,
-            )
-            for chunk in completion:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-        except Exception as e:
-            logger.error(f"LLM API (call_dashscope) 调用失败: {e}")
-            yield f"错误: 调用LLM失败 - {e}"
+
+        max_retries = conf.LLM_MAX_RETRIES
+        base_delay = conf.LLM_RETRY_BASE_DELAY
+        max_delay = conf.LLM_RETRY_MAX_DELAY
+
+        for attempt in range(max_retries):
+            try:
+                completion = client.chat.completions.create(
+                    model=conf.LLM_MODEL,
+                    messages=[
+                        {"role": "system", "content": "你是一个有用的助手."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    timeout=30,
+                    stream=True,
+                )
+                for chunk in completion:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+                return
+            except (APITimeoutError, APIConnectionError,
+                    InternalServerError, RateLimitError,
+                    ConnectionError, TimeoutError) as e:
+                if attempt < max_retries - 1:
+                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    logger.warning(
+                        f"LLM API 调用失败 (attempt {attempt+1}/{max_retries}): {e}，"
+                        f"{delay:.1f}s 后重试..."
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(f"LLM API 调用失败，已达最大重试次数 {max_retries}: {e}")
+                    yield f"错误: 调用LLM失败 - {e}"
+            except Exception as e:
+                logger.error(f"LLM API 调用失败（不可重试）: {e}")
+                yield f"错误: 调用LLM失败 - {e}"
+                return
 
     # print(call_dashscope(prompt='你是谁'))
     # 初始化 VectorStore

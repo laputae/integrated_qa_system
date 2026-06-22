@@ -77,6 +77,8 @@ class Config():
         self.RETRIEVAL_K = self.config.getint('retrieval', 'retrieval_k', fallback=5)
         # 最终候选数量
         self.CANDIDATE_M = self.config.getint('retrieval', 'candidate_m', fallback=2)
+        # 子查询并行检索最大线程数
+        self.RETRIEVAL_MAX_WORKERS = self.config.getint('retrieval', 'max_workers', fallback=3)
 
         # 查询分类器配置
         self.CLASSIFIER_CONFIDENCE_THRESHOLD = self.config.getfloat(
@@ -87,6 +89,11 @@ class Config():
         self.STRATEGY_CACHE_TTL = self.config.getint(
             'strategy', 'cache_ttl', fallback=604800
         )
+
+        # LLM 重试配置
+        self.LLM_MAX_RETRIES = self.config.getint('retry', 'max_retries', fallback=3)
+        self.LLM_RETRY_BASE_DELAY = self.config.getfloat('retry', 'base_delay', fallback=1.0)
+        self.LLM_RETRY_MAX_DELAY = self.config.getfloat('retry', 'max_delay', fallback=30.0)
 
         # Embedding 配置
         self.EMBEDDING_MODEL = self.config.get('embedding', 'model', fallback='bge-m3')

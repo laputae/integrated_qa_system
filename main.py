@@ -2,7 +2,10 @@
 from mysql_qa import MySQLClient, RedisClient, BM25Search
 from rag_qa import VectorStore, RAGSystem
 from base import logger, Config
-from openai import OpenAI
+from openai import (
+    OpenAI, APITimeoutError, APIConnectionError,
+    InternalServerError, RateLimitError,
+)
 import time
 import uuid
 
@@ -35,23 +38,42 @@ class IntegratedQASystem:
         Base.metadata.create_all(self.engine)
 
     def call_dashscope(self, prompt):
-        try:
-            completion = self.client.chat.completions.create(
-                model=self.config.LLM_MODEL,
-                messages=[
-                    {"role": "system", "content": "你是一个有用的助手。"},
-                    {"role": "user", "content": prompt},
-                ],
-                timeout=30,
-                stream=True,
-            )
-            for chunk in completion:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content
-                    yield content
-        except Exception as e:
-            self.logger.error(f"LLM调用失败: {e}")
-            return f"错误：LLM调用失败 - {e}"
+        max_retries = self.config.LLM_MAX_RETRIES
+        base_delay = self.config.LLM_RETRY_BASE_DELAY
+        max_delay = self.config.LLM_RETRY_MAX_DELAY
+
+        for attempt in range(max_retries):
+            try:
+                completion = self.client.chat.completions.create(
+                    model=self.config.LLM_MODEL,
+                    messages=[
+                        {"role": "system", "content": "你是一个有用的助手。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    timeout=30,
+                    stream=True,
+                )
+                for chunk in completion:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+                return
+            except (APITimeoutError, APIConnectionError,
+                    InternalServerError, RateLimitError,
+                    ConnectionError, TimeoutError) as e:
+                if attempt < max_retries - 1:
+                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    self.logger.warning(
+                        f"LLM调用失败 (attempt {attempt+1}/{max_retries}): {e}，"
+                        f"{delay:.1f}s 后重试..."
+                    )
+                    time.sleep(delay)
+                else:
+                    self.logger.error(f"LLM调用失败，已达最大重试次数 {max_retries}: {e}")
+                    yield f"错误：LLM调用失败 - {e}"
+            except Exception as e:
+                self.logger.error(f"LLM调用失败（不可重试）: {e}")
+                yield f"错误：LLM调用失败 - {e}"
+                return
 
     def _get_conversation_repo(self):
         from repositories.conversation_repo import ConversationRepository
