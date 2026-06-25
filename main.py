@@ -2,6 +2,7 @@
 from mysql_qa import MySQLClient, RedisClient, BM25Search
 from rag_qa import VectorStore, RAGSystem
 from base import logger, Config
+from base.health import SystemHealth, DegradationLevel
 from openai import (
     OpenAI, APITimeoutError, APIConnectionError,
     InternalServerError, RateLimitError,
@@ -14,37 +15,144 @@ class IntegratedQASystem:
     def __init__(self):
         self.logger = logger
         self.config = Config()
+        self._startup_time = time.time()
 
+        # ---- Phase 1: Core infrastructure (must succeed) ----
         from db_models.base import init_db, SessionLocal, Base, engine
         self.engine = engine
         self.SessionLocal = SessionLocal
 
-        self.redis_client = RedisClient()
-        self.mysql_client = MySQLClient(engine=self.engine)
-        self.bm25_search = BM25Search(self.redis_client, self.mysql_client)
+        # ---- Phase 2: Optional components (graceful on failure) ----
+        self.redis_client = self._init_redis()
+        self.mysql_client = self._init_mysql()
+        self.bm25_search = self._init_bm25()
+        self.llm_client = self._init_llm()
+        self.vector_store = self._init_vector_store()
+        self.rag_system = self._init_rag_system()
 
+        # ---- Phase 3: DB schema (best-effort) ----
+        self._init_db_schema()
+
+        # ---- Phase 4: Register health checks ----
+        self.health = SystemHealth(self.config, self.logger)
+        self._register_health_checks()
+
+        # Report initial degradation level
+        level = self.health.get_degradation_level()
+        if level == DegradationLevel.LEVEL0_FULL:
+            self.logger.info("系统初始化完成，所有组件健康")
+        else:
+            self.logger.warning(f"系统初始化完成，当前降级等级: {level.name}")
+
+    # ========== Phase 2: Component Initializers ==========
+
+    def _init_redis(self):
         try:
-            self.client = OpenAI(
+            client = RedisClient()
+            self.logger.info("Redis 连接成功")
+            return client
+        except Exception as e:
+            self.logger.warning(f"Redis 初始化失败 (系统将降级运行): {e}")
+            return None
+
+    def _init_mysql(self):
+        try:
+            client = MySQLClient(engine=self.engine)
+            self.logger.info("MySQL 客户端初始化成功")
+            return client
+        except Exception as e:
+            self.logger.warning(f"MySQL 客户端初始化失败 (系统将无法提供服务): {e}")
+            return None
+
+    def _init_bm25(self):
+        if not self.redis_client or not self.mysql_client:
+            self.logger.warning("BM25Search 初始化跳过: Redis 或 MySQL 不可用")
+            return None
+        try:
+            bm25 = BM25Search(self.redis_client, self.mysql_client)
+            self.logger.info("BM25Search 初始化成功")
+            return bm25
+        except Exception as e:
+            self.logger.warning(f"BM25Search 初始化失败: {e}")
+            return None
+
+    def _init_llm(self):
+        try:
+            client = OpenAI(
                 api_key=self.config.DASHSCOPE_API_KEY,
                 base_url=self.config.DASHSCOPE_BASE_URL,
             )
+            self.logger.info("LLM 客户端初始化成功")
+            return client
         except Exception as e:
-            self.logger.error(f"OpenAI 客户端初始化失败: {e}")
-            raise
+            self.logger.warning(f"LLM 客户端初始化失败: {e}")
+            return None
 
-        self.vector_store = VectorStore()
-        self.rag_system = RAGSystem(self.vector_store, self.call_dashscope, redis_client=self.redis_client)
+    def _init_vector_store(self):
+        try:
+            vs = VectorStore()
+            self.logger.info("VectorStore 初始化成功")
+            return vs
+        except Exception as e:
+            self.logger.warning(f"VectorStore 初始化失败 (RAG 降级): {e}")
+            return None
 
-        Base.metadata.create_all(self.engine)
+    def _init_rag_system(self):
+        if not self.vector_store or not self.llm_client:
+            self.logger.warning("RAGSystem 初始化跳过: VectorStore 或 LLM 不可用")
+            return None
+        try:
+            rag = RAGSystem(self.vector_store, self.call_dashscope, redis_client=self.redis_client)
+            self.logger.info("RAGSystem 初始化成功")
+            return rag
+        except Exception as e:
+            self.logger.warning(f"RAGSystem 初始化失败: {e}")
+            return None
+
+    def _init_db_schema(self):
+        try:
+            from db_models.base import Base
+            Base.metadata.create_all(self.engine)
+            self.logger.info("数据库 Schema 创建/验证完成")
+        except Exception as e:
+            self.logger.warning(f"数据库 Schema 创建失败: {e}")
+
+    # ========== Health Check Registration ==========
+
+    def _register_health_checks(self):
+        from base.health import HealthChecker
+        checker = HealthChecker(self.config, self.logger)
+
+        self.health.register_component("mysql",
+            lambda: checker.check_mysql(self.engine))
+        self.health.register_component("redis",
+            lambda: checker.check_redis(self.redis_client))
+        self.health.register_component("milvus",
+            lambda: checker.check_milvus(self.vector_store))
+        self.health.register_component("llm",
+            lambda: checker.check_llm(self.llm_client, self.config))
+        self.health.register_component("embedding",
+            lambda: checker.check_embedding(self.vector_store))
+        self.health.register_component("reranker",
+            lambda: checker.check_reranker(self.vector_store))
+        self.health.register_component("classifier",
+            lambda: checker.check_classifier(self.rag_system))
+
+    # ========== LLM Call ==========
 
     def call_dashscope(self, prompt):
+        if self.llm_client is None:
+            self.logger.error("LLM 客户端未初始化")
+            yield "错误：LLM服务不可用"
+            return
+
         max_retries = self.config.LLM_MAX_RETRIES
         base_delay = self.config.LLM_RETRY_BASE_DELAY
         max_delay = self.config.LLM_RETRY_MAX_DELAY
 
         for attempt in range(max_retries):
             try:
-                completion = self.client.chat.completions.create(
+                completion = self.llm_client.chat.completions.create(
                     model=self.config.LLM_MODEL,
                     messages=[
                         {"role": "system", "content": "你是一个有用的助手。"},
@@ -75,6 +183,8 @@ class IntegratedQASystem:
                 yield f"错误：LLM调用失败 - {e}"
                 return
 
+    # ========== Conversation Helpers ==========
+
     def _get_conversation_repo(self):
         from repositories.conversation_repo import ConversationRepository
         return ConversationRepository(self.SessionLocal)
@@ -100,13 +210,39 @@ class IntegratedQASystem:
         repo = self._get_conversation_repo()
         return repo.soft_delete_sessions([session_id], user_id, tenant_id) > 0
 
+    # ========== Main Query Pipeline ==========
+
     def query(self, query, user_id: int = 0, tenant_id: int = 0,
               source_filter=None, session_id=None, external_context=None):
         start_time = time.time()
-        self.logger.info(f"处理查询: '{query}' (会话ID: {session_id}, 用户ID: {user_id}, 租户ID: {tenant_id})")
+
+        # --- Degradation check ---
+        level = self.health.get_degradation_level()
+        self.logger.info(
+            f"处理查询: '{query}' (降级等级: {level.name}, "
+            f"会话ID: {session_id}, 用户ID: {user_id}, 租户ID: {tenant_id})"
+        )
+
+        if level == DegradationLevel.LEVEL4_NO_MYSQL:
+            self.logger.error("MySQL 不可用，拒绝查询")
+            yield "系统维护中，暂无法处理查询，请联系管理员。", True
+            return
+
         history = self.get_session_history(session_id, user_id, tenant_id) if session_id else []
 
-        answer, need_rag = self.bm25_search.search(query, threshold=0.85)
+        # --- Phase 1: BM25 search ---
+        answer = None
+        need_rag = False
+        if self.bm25_search:
+            try:
+                answer, need_rag = self.bm25_search.search(query, threshold=0.85)
+            except Exception as e:
+                self.logger.error(f"BM25 搜索失败: {e}")
+                answer, need_rag = None, False
+        else:
+            # No BM25 at all — go straight to RAG if available
+            need_rag = True
+
         if answer:
             self.logger.info(f"MySQL答案: {answer}")
             if session_id:
@@ -114,10 +250,23 @@ class IntegratedQASystem:
             processing_time = time.time() - start_time
             self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
             yield answer, True
-        elif need_rag:
+            return
+
+        # --- Phase 2: BM25 missed. Try RAG if available ---
+        if need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS:
+            if level == DegradationLevel.LEVEL3_NO_LLM:
+                self.logger.info("LLM 降级中，返回检索到的原始上下文")
+                collected_answer = self._degraded_rag_retrieve(query, source_filter)
+                yield collected_answer, True
+                return
+
+            # Full RAG pipeline (Level 0 or 1)
             self.logger.info("无可靠MySQL答案，回退到RAG")
             collected_answer = ""
-            for token in self.rag_system.generate_answer(query, source_filter=source_filter, history=history, external_context=external_context):
+            for token in self.rag_system.generate_answer(
+                query, source_filter=source_filter, history=history,
+                external_context=external_context
+            ):
                 collected_answer += token
                 yield token, False
             if session_id:
@@ -125,11 +274,34 @@ class IntegratedQASystem:
             processing_time = time.time() - start_time
             self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
             yield "", True
+        elif need_rag and level >= DegradationLevel.LEVEL2_NO_MILVUS:
+            self.logger.info(f"RAG 不可用 (降级等级: {level.name})")
+            processing_time = time.time() - start_time
+            self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
+            yield "未找到答案", True
         else:
             self.logger.info("未找到答案")
             processing_time = time.time() - start_time
             self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
             yield "未找到答案", True
+
+    def _degraded_rag_retrieve(self, query, source_filter=None) -> str:
+        """Level 3 degraded retrieval: return raw context without LLM summarization."""
+        try:
+            strategy = self.rag_system.strategy_selector.select_strategy(query)
+            docs = self.rag_system.retrieve_and_merge(
+                query, source_filter=source_filter, strategy=strategy
+            )
+            if docs:
+                context = "\n\n".join([doc.page_content for doc in docs])
+                return (
+                    "【系统提示】大语言模型暂不可用，以下为检索到的相关资料：\n\n"
+                    f"{context}"
+                )
+            return "未找到相关答案"
+        except Exception as e:
+            self.logger.error(f"降级检索失败: {e}")
+            return "未找到相关答案"
 
 
 if __name__ == "__main__":

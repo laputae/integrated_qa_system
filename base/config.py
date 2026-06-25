@@ -131,6 +131,23 @@ class Config():
             'tenant', 'default_tenant_name', fallback='default'
         )
 
+        # Health check 配置
+        self.HEALTH_CHECK_TIMEOUT = self.config.getfloat(
+            'health', 'check_timeout', fallback=5.0
+        )
+        self.HEALTH_CACHE_TTL = self.config.getint(
+            'health', 'cache_ttl', fallback=30
+        )
+        self.HEALTH_RECOVERY_INTERVAL = self.config.getint(
+            'health', 'recovery_interval', fallback=60
+        )
+        self.HEALTH_CIRCUIT_BREAKER_THRESHOLD = self.config.getint(
+            'health', 'circuit_breaker_threshold', fallback=3
+        )
+        self.HEALTH_CIRCUIT_BREAKER_COOLDOWN = self.config.getint(
+            'health', 'circuit_breaker_cooldown', fallback=30
+        )
+
 
 if __name__ == '__main__':
     conf = Config()

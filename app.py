@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, HTTPException, Query, Depends
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,7 @@ import time
 import re
 
 from main import IntegratedQASystem
+from base.health import DegradationLevel
 from gateway.middleware import GatewayMiddleware
 from gateway.auth import (
     create_access_token,
@@ -33,7 +35,17 @@ from repositories.conversation_repo import ConversationRepository
 from repositories.tenant_repo import TenantRepository
 from mysql_qa import RedisClient
 
-app = FastAPI(title="问答系统API", description="集成MySQL和RAG的智能问答系统")
+qa_system = IntegratedQASystem()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await qa_system.health.start_background_recovery()
+    yield
+    await qa_system.health.close()
+
+
+app = FastAPI(title="问答系统API", description="集成MySQL和RAG的智能问答系统", lifespan=lifespan)
 
 app.add_middleware(GatewayMiddleware)
 
@@ -46,8 +58,6 @@ app.add_middleware(
 )
 
 os.makedirs("static", exist_ok=True)
-
-qa_system = IntegratedQASystem()
 
 # ========== Pydantic Models ==========
 
@@ -105,7 +115,24 @@ async def read_root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Liveness probe: Is the process alive?"""
+    return {"status": "healthy", "service": "integrated_qa_system"}
+
+
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe: Can the app serve traffic?"""
+    is_ready = qa_system.health.is_ready()
+    return {
+        "status": "ready" if is_ready else "not_ready",
+        "degradation_level": qa_system.health.get_degradation_level().value,
+    }
+
+
+@app.get("/status")
+async def status_detail():
+    """Detailed status: Per-component health breakdown."""
+    return qa_system.health.get_status_response()
 
 
 # ========== Auth Endpoints ==========
@@ -325,8 +352,27 @@ async def query(request: QueryRequest, user: dict = Depends(get_current_user)):
             "processing_time": time.time() - start_time
         }
 
+    # Degradation check: Level 4 (no MySQL) → 503
+    if qa_system.health.get_degradation_level() == DegradationLevel.LEVEL4_NO_MYSQL:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "系统维护中，暂无法处理查询，请联系管理员。",
+                "session_id": session_id,
+            },
+        )
+
     answer, need_rag = qa_system.bm25_search.search(request.query, threshold=0.85)
     if need_rag:
+        # If RAG is degraded (Level 2+), tell the user directly
+        level = qa_system.health.get_degradation_level()
+        if level >= DegradationLevel.LEVEL2_NO_MILVUS:
+            return {
+                "answer": "未找到答案",
+                "is_streaming": False,
+                "session_id": session_id,
+                "processing_time": time.time() - start_time,
+            }
         return {
             "answer": "请使用WebSocket接口获取流式响应",
             "is_streaming": True,

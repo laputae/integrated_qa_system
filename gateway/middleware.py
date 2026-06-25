@@ -14,6 +14,8 @@ AUTH_WHITELIST = {
     "/api/auth/register",
     "/api/auth/refresh",
     "/health",
+    "/ready",
+    "/status",
     "/",
     "/docs",
     "/openapi.json",
