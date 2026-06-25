@@ -263,7 +263,7 @@ class RAGSystem:
         }
         return messages.get(reason, messages["insufficient_context"])
 
-    def generate_answer(self, query, source_filter=None, history=None):
+    def generate_answer(self, query, source_filter=None, history=None, external_context=None):
         #   记录查询开始时间
         start_time = time.time()
         logger.info(f"开始处理查询: '{query}', 学科过滤: {source_filter}")
@@ -319,7 +319,8 @@ class RAGSystem:
         prompt_input = self.rag_prompt.format(context=context,
                                               question=query,
                                               history=history_context,
-                                              phone=conf.CUSTOMER_SERVICE_PHONE)
+                                              phone=conf.CUSTOMER_SERVICE_PHONE,
+                                              external_context=external_context or "无")
         try:
             # 使用大模型获得输出结果：
             for token in self.llm(prompt_input):

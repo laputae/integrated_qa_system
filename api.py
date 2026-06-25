@@ -40,6 +40,8 @@ async def handle_query(request: Request):
     query = body.get("query", "").strip()
     # 获取学科过滤条件（可选），若未提供则为 None
     source_filter = body.get("source_filter", None)
+    # 获取外部上下文（可选），由上游编排层注入的 Function Calling 结果
+    external_context = body.get("external_context", None)
     # 获取会话 ID（可选），用于维护多轮对话历史
     session_id = body.get("session_id", None)
 
@@ -67,7 +69,8 @@ async def handle_query(request: Request):
             for token, is_complete in qa_system.query(
                 query=query,
                 source_filter=source_filter,
-                session_id=session_id
+                session_id=session_id,
+                external_context=external_context
             ):
                 # 构造要返回的 JSON 消息，包含当前文本片段和状态
                 message = {

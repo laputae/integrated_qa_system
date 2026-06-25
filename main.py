@@ -101,7 +101,7 @@ class IntegratedQASystem:
         return repo.soft_delete_sessions([session_id], user_id, tenant_id) > 0
 
     def query(self, query, user_id: int = 0, tenant_id: int = 0,
-              source_filter=None, session_id=None):
+              source_filter=None, session_id=None, external_context=None):
         start_time = time.time()
         self.logger.info(f"处理查询: '{query}' (会话ID: {session_id}, 用户ID: {user_id}, 租户ID: {tenant_id})")
         history = self.get_session_history(session_id, user_id, tenant_id) if session_id else []
@@ -117,7 +117,7 @@ class IntegratedQASystem:
         elif need_rag:
             self.logger.info("无可靠MySQL答案，回退到RAG")
             collected_answer = ""
-            for token in self.rag_system.generate_answer(query, source_filter=source_filter, history=history):
+            for token in self.rag_system.generate_answer(query, source_filter=source_filter, history=history, external_context=external_context):
                 collected_answer += token
                 yield token, False
             if session_id:

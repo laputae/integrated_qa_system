@@ -375,6 +375,7 @@ async def websocket_endpoint(websocket: WebSocket):
             query_text = request_data.get("query")
             source_filter = request_data.get("source_filter")
             session_id = request_data.get("session_id", str(uuid.uuid4()))
+            external_context = request_data.get("external_context")
             start_time = time.time()
 
             if websocket.client_state == websocket.client_state.CONNECTED:
@@ -397,7 +398,8 @@ async def websocket_endpoint(websocket: WebSocket):
             collected_answer = ""
             for token_val, is_complete in qa_system.query(
                 query_text, user_id=user_id, tenant_id=tenant_id,
-                source_filter=source_filter, session_id=session_id
+                source_filter=source_filter, session_id=session_id,
+                external_context=external_context
             ):
                 collected_answer += token_val
                 if is_complete and not collected_answer:

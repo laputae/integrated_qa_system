@@ -59,6 +59,9 @@ class RAGPrompts:
 **对话历史**：
 {history}
 
+**外部信息**：
+{external_context}
+
 **上下文**：
 {context}
 
@@ -67,7 +70,7 @@ class RAGPrompts:
 
 **回答**：
 """,
-            input_variables=["context", "history", "question", "phone"],
+            input_variables=["context", "history", "question", "phone", "external_context"],
         )
 
     @staticmethod
