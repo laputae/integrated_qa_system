@@ -49,7 +49,7 @@ _COMPONENT_DEGRADATION_MAP = {
 }
 
 # Odered for display
-_COMPONENT_ORDER = ["mysql", "redis", "milvus", "llm", "embedding", "reranker", "classifier"]
+_COMPONENT_ORDER = ["mysql", "redis", "milvus", "llm", "embedding", "reranker", "classifier", "eval_quality"]
 
 
 # ============================================================
@@ -308,6 +308,40 @@ class HealthChecker:
             result.status = HealthStatus.UNHEALTHY
             result.error_message = str(e)
             self.logger.warning(f"Classifier 健康检查失败: {e}")
+        result.last_checked = time.time()
+        return result
+
+    # ------ Eval Quality ------
+
+    def check_eval_quality(self, eval_service) -> ComponentHealth:
+        result = ComponentHealth(name="eval_quality")
+        if eval_service is None:
+            result.status = HealthStatus.UNKNOWN
+            result.error_message = "Eval service not initialized"
+            result.last_checked = time.time()
+            return result
+
+        start = time.time()
+        try:
+            quality = eval_service.get_quality_status()
+            qs = quality.get("quality_status", "unknown")
+            regression = quality.get("regression", {})
+            if qs == "critical":
+                result.status = HealthStatus.DEGRADED
+                result.error_message = f"评估质量严重下降 (faithfulness < critical threshold)"
+            elif regression.get("detected"):
+                result.status = HealthStatus.DEGRADED
+                result.error_message = regression.get("details", "检测到质量回归")
+            elif qs == "warning":
+                result.status = HealthStatus.DEGRADED
+                result.error_message = "评估质量低于警告阈值"
+            else:
+                result.status = HealthStatus.HEALTHY
+            result.latency_ms = (time.time() - start) * 1000
+        except Exception as e:
+            result.status = HealthStatus.UNHEALTHY
+            result.error_message = str(e)
+            self.logger.warning(f"Eval quality 健康检查失败: {e}")
         result.last_checked = time.time()
         return result
 

@@ -4,6 +4,8 @@ from db_models.user import User
 from db_models.conversation import Conversation
 from db_models.audit_log import AuditLog
 from db_models.refresh_token import RefreshToken
+from db_models.eval_run import EvalRun
+from db_models.eval_result import EvalResult
 
 __all__ = [
     "Base",
@@ -15,4 +17,6 @@ __all__ = [
     "Conversation",
     "AuditLog",
     "RefreshToken",
+    "EvalRun",
+    "EvalResult",
 ]

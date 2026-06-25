@@ -131,6 +131,18 @@ class Config():
             'tenant', 'default_tenant_name', fallback='default'
         )
 
+        # Eval 配置
+        self.EVAL_LLM_MODEL = self.config.get('eval', 'eval_llm_model', fallback='') or None
+        self.EVAL_LLM_BASE_URL = self.config.get('eval', 'eval_llm_base_url', fallback='') or None
+        self.EVAL_EMBEDDING_MODEL = self.config.get('eval', 'eval_embedding_model', fallback='mxbai-embed-large')
+        self.EVAL_EMBEDDING_BASE_URL = self.config.get('eval', 'eval_embedding_base_url', fallback='http://localhost:11434')
+        self.EVAL_INTERVAL_SECONDS = self.config.getint('eval', 'eval_interval_seconds', fallback=86400)
+        self.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD = self.config.getfloat('eval', 'regression_faithfulness_threshold', fallback=0.6)
+        self.EVAL_REGRESSION_CONSECUTIVE_RUNS = self.config.getint('eval', 'regression_consecutive_runs', fallback=3)
+        self.EVAL_QUALITY_WARNING_THRESHOLD = self.config.getfloat('eval', 'quality_warning_threshold', fallback=0.6)
+        self.EVAL_QUALITY_CRITICAL_THRESHOLD = self.config.getfloat('eval', 'quality_critical_threshold', fallback=0.4)
+        self.EVAL_DEFAULT_DATASET_PATH = self.config.get('eval', 'default_dataset_path', fallback='rag_qa/rag_assesment/rag_evaluate_data.json')
+
         # Health check 配置
         self.HEALTH_CHECK_TIMEOUT = self.config.getfloat(
             'health', 'check_timeout', fallback=5.0

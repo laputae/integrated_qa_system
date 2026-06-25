@@ -29,6 +29,7 @@ class IntegratedQASystem:
         self.llm_client = self._init_llm()
         self.vector_store = self._init_vector_store()
         self.rag_system = self._init_rag_system()
+        self.eval_service = self._init_eval_service()
 
         # ---- Phase 3: DB schema (best-effort) ----
         self._init_db_schema()
@@ -109,6 +110,26 @@ class IntegratedQASystem:
             self.logger.warning(f"RAGSystem 初始化失败: {e}")
             return None
 
+    def _init_eval_service(self):
+        if not self.rag_system:
+            self.logger.warning("EvalService 初始化跳过: RAGSystem 不可用")
+            return None
+        try:
+            from repositories.eval_repo import EvalRepository
+            from rag_qa.eval.eval_service import EvalService
+            repo = EvalRepository(self.SessionLocal)
+            service = EvalService(
+                config=self.config, repo=repo,
+                rag_system=self.rag_system,
+                llm_client=self.llm_client,
+                vector_store=self.vector_store,
+            )
+            self.logger.info("EvalService 初始化成功")
+            return service
+        except Exception as e:
+            self.logger.warning(f"EvalService 初始化失败: {e}")
+            return None
+
     def _init_db_schema(self):
         try:
             from db_models.base import Base
@@ -137,6 +158,8 @@ class IntegratedQASystem:
             lambda: checker.check_reranker(self.vector_store))
         self.health.register_component("classifier",
             lambda: checker.check_classifier(self.rag_system))
+        self.health.register_component("eval_quality",
+            lambda: checker.check_eval_quality(self.eval_service))
 
     # ========== LLM Call ==========
 
