@@ -74,6 +74,7 @@ class VectorStore:
         # 初始化 BGE-Reranker 模型，用于重排序检索结果
         reranker_path = os.path.join(rag_qa_path, 'models', 'bge-reranker-large')
         self.reranker = CrossEncoder(reranker_path, device=self.device)
+        self.reranker_score_threshold = conf.RERANKER_SCORE_THRESHOLD
         # 通过注册表获取嵌入模型
         model_name = conf.EMBEDDING_MODEL
         self.logger.info(f"使用嵌入模型: {model_name}")
@@ -296,22 +297,35 @@ class VectorStore:
         parent_docs = self._get_unique_parent_docs(sub_chunks)
         # print(f'parent_docs--》{parent_docs}')
         # print(f'parent_docs--》{len(parent_docs)}')
-        # # 如果只有1个文档或者没有，直接返回跳过重排序
+        # 如果只有0或1个文档，直接返回跳过重排序
         if len(parent_docs) < 2:
             return parent_docs[:conf.CANDIDATE_M]
-            # 如果有父文档，进行重排序
-        if parent_docs:
-            # 创建查询与文档内容的配对列表
-            pairs = [[query, doc.page_content] for doc in parent_docs]
-            # 使用 BGE-Reranker 计算每个配对的得分
-            scores = self.reranker.predict(pairs)
-            # print(f'scores--》{scores}')
-            # 根据得分从高到低排序文档
-            ranked_parent_docs = [doc for _, doc in sorted(zip(scores, parent_docs), reverse=True)]
-        # 如果没有父文档，返回空列表
-        # 如果没有父文档，返回空列表
-        else:
-            ranked_parent_docs = []
+
+        if not parent_docs:
+            return []
+
+        # 创建查询与文档内容的配对列表，使用 BGE-Reranker 计算得分
+        pairs = [[query, doc.page_content] for doc in parent_docs]
+        scores = self.reranker.predict(pairs)
+
+        # 按得分从高到低排序，同时保留 score 到 metadata
+        sorted_pairs = sorted(zip(scores, parent_docs), key=lambda x: x[0], reverse=True)
+        ranked_parent_docs = []
+        for score, doc in sorted_pairs:
+            doc.metadata["rerank_score"] = float(score)
+            ranked_parent_docs.append(doc)
+
+        # Reranker 分数阈值过滤
+        threshold = self.reranker_score_threshold
+        if threshold > 0.0:
+            kept = [doc for doc in ranked_parent_docs
+                    if doc.metadata.get("rerank_score", 0.0) >= threshold]
+            filtered_count = len(ranked_parent_docs) - len(kept)
+            if filtered_count > 0:
+                self.logger.info(
+                    f"Reranker 阈值={threshold}: 过滤掉 {filtered_count}/{len(ranked_parent_docs)} 个低分文档"
+                )
+            ranked_parent_docs = kept
 
         # 返回前 m 个重排序后的文档
         return ranked_parent_docs[:conf.CANDIDATE_M]

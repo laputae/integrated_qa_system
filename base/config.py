@@ -80,6 +80,11 @@ class Config():
         # 子查询并行检索最大线程数
         self.RETRIEVAL_MAX_WORKERS = self.config.getint('retrieval', 'max_workers', fallback=3)
 
+        # Reranker 分数阈值（低于该分数的文档将被过滤）
+        self.RERANKER_SCORE_THRESHOLD = self.config.getfloat(
+            'retrieval', 'reranker_score_threshold', fallback=0.0
+        )
+
         # 查询分类器配置
         self.CLASSIFIER_CONFIDENCE_THRESHOLD = self.config.getfloat(
             'classifier', 'confidence_threshold', fallback=0.8

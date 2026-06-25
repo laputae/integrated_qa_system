@@ -224,6 +224,45 @@ class RAGSystem:
                 return True
         return False
 
+    def _is_context_sufficient(self, context_docs, context_str) -> bool:
+        """检查检索到的上下文质量是否足以回答用户问题。"""
+        if not context_docs or len(context_docs) == 0:
+            logger.warning("上下文质量检查：未检索到任何文档")
+            return False
+
+        if not context_str or not context_str.strip():
+            logger.warning("上下文质量检查：上下文内容为空")
+            return False
+
+        threshold = conf.RERANKER_SCORE_THRESHOLD
+        if threshold > 0.0:
+            scores = [
+                doc.metadata.get("rerank_score", 0.0)
+                for doc in context_docs
+                if "rerank_score" in doc.metadata
+            ]
+            if scores and all(s < threshold for s in scores):
+                logger.warning(
+                    f"上下文质量检查：所有{len(scores)}个文档的reranker分数均低于阈值({threshold})"
+                )
+                return False
+
+        return True
+
+    def _build_fallback_message(self, query, reason="insufficient_context"):
+        """构建信息不足时的兜底回复。"""
+        phone = conf.CUSTOMER_SERVICE_PHONE
+        messages = {
+            "insufficient_context": (
+                f"抱歉，根据现有知识库中的资料，我无法准确回答您的问题「{query}」。"
+                f"这可能是因为知识库中缺少相关领域的文档。\n"
+                f"建议您：\n"
+                f"1. 精简或重新表述您的问题。\n"
+                f"2. 联系人工客服获取进一步帮助，电话：{phone}。"
+            ),
+        }
+        return messages.get(reason, messages["insufficient_context"])
+
     def generate_answer(self, query, source_filter=None, history=None):
         #   记录查询开始时间
         start_time = time.time()
@@ -268,6 +307,14 @@ class RAGSystem:
             else:
                 context = ""
                 logger.info("未检索到相关文档，上下文为空")
+
+            # 上下文质量检查：质量不足时直接返回兜底回复，不调用LLM
+            if not self._is_context_sufficient(context_docs, context):
+                logger.info(f"上下文质量不足，触发fallback回应 (查询: '{query}')")
+                yield self._build_fallback_message(query)
+                process_time = time.time() - start_time
+                logger.info(f'Fallback处理完成（耗时：{process_time:.2f}s, 查询：{query})')
+                return
 
         prompt_input = self.rag_prompt.format(context=context,
                                               question=query,
