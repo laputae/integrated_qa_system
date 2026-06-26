@@ -39,6 +39,9 @@ from mysql_qa import RedisClient
 
 qa_system = IntegratedQASystem()
 
+# asyncio.Semaphore for concurrency control — limits simultaneous LLM calls
+_llm_semaphore = asyncio.Semaphore(qa_system.config.MAX_CONCURRENT_LLM_CALLS)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -701,8 +704,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 break
 
             collected_answer = ""
-            for token_val, is_complete in qa_system.query(
-                query_text, user_id=user_id, tenant_id=tenant_id,
+            async for token_val, is_complete in qa_system.aquery(
+                query_text, _llm_semaphore,
+                user_id=user_id, tenant_id=tenant_id,
                 source_filter=source_filter, session_id=session_id,
                 external_context=external_context
             ):

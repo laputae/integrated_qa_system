@@ -202,6 +202,14 @@ class Config():
             'hallucination_guard', 'contradiction_threshold', fallback=0.5
         )
 
+        # 并发控制配置
+        self.MAX_CONCURRENT_LLM_CALLS = self.config.getint(
+            'concurrency', 'max_concurrent_llm_calls', fallback=10
+        )
+        self.THREAD_POOL_WORKERS = self.config.getint(
+            'concurrency', 'thread_pool_workers', fallback=20
+        )
+
 
 if __name__ == '__main__':
     conf = Config()
