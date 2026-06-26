@@ -66,6 +66,13 @@ class Config():
         self.DASHSCOPE_BASE_URL =os.environ.get("DEEPSEEK_BASE_URL") or self.config.get('llm', 'dashscope_base_url',
                                                   fallback='https://api.deepseek.com')
 
+        # Chunking 策略配置
+        self.CHUNK_DEFAULT_STRATEGY = self.config.get('chunking', 'default_strategy', fallback='recursive')
+        self.CHUNK_DOC_TYPE_STRATEGIES = self.config.get('chunking', 'doc_type_strategies', fallback='{}')
+        self.CHUNK_SEMANTIC_MODEL_PATH = self.config.get('chunking', 'semantic_model_path', fallback='')
+        self.CHUNK_SEMANTIC_DEVICE = self.config.get('chunking', 'semantic_device', fallback='cpu')
+        self.CHUNK_SEMANTIC_FALLBACK_STRATEGY = self.config.get('chunking', 'semantic_fallback_strategy', fallback='recursive')
+
         # 检索参数
         # 父块大小
         self.PARENT_CHUNK_SIZE = self.config.getint('retrieval', 'parent_chunk_size', fallback=1200)

@@ -31,9 +31,15 @@ except ImportError:
     UnstructuredMarkdownLoader = None
 from edu_document_loaders import OCRPDFLoader, OCRDOCLoader, OCRPPTLoader, OCRIMGLoader
 
-# 原始切分器（保留中文递归切分 + Markdown 支持）
-from edu_text_spliter import ChineseRecursiveTextSplitter
-from langchain_text_splitters import MarkdownTextSplitter
+# 自适应切分器（策略模式：recursive / semantic / markdown）
+from edu_text_spliter.chunk_strategy import (
+    create_parent_splitter,
+    create_child_splitter,
+    SEMANTIC,
+    RECURSIVE,
+    MARKDOWN,
+)
+from base.chunk_config import ChunkConfigManager
 
 # LlamaIndex 核心（仅用于索引构建）
 from llama_index.core import (
@@ -329,19 +335,15 @@ class LlamaIndexProcessor:
 
     def _split_documents(self, documents, parent_chunk_size, child_chunk_size,
                          chunk_overlap):
-        """两级切分：父块→子块。复用原始 ChineseRecursiveTextSplitter + MarkdownTextSplitter"""
-        parent_splitter = ChineseRecursiveTextSplitter(
-            chunk_size=parent_chunk_size, chunk_overlap=chunk_overlap
-        )
-        child_splitter = ChineseRecursiveTextSplitter(
-            chunk_size=child_chunk_size, chunk_overlap=chunk_overlap
-        )
-        markdown_parent_splitter = MarkdownTextSplitter(
-            chunk_size=parent_chunk_size, chunk_overlap=chunk_overlap
-        )
-        markdown_child_splitter = MarkdownTextSplitter(
-            chunk_size=child_chunk_size, chunk_overlap=chunk_overlap
-        )
+        """两级切分：父块→子块，支持自适应策略选择。
+
+        策略来源: ChunkConfigManager 单例（支持运行时热更新）。
+        Markdown 文件始终使用 MarkdownTextSplitter 以保持结构感知能力。
+        语义策略（AliTextSplitter）只作用于 parent 级别；child 级别始终递归切分。
+        """
+        config_mgr = ChunkConfigManager()
+        cfg = config_mgr.get_config()
+        semantic_model_path = cfg.get("semantic_model_path") or None
 
         child_chunks = []
         for i, doc in enumerate(documents):
@@ -349,19 +351,37 @@ class LlamaIndexProcessor:
             file_extension = os.path.splitext(file_path)[1].lower()
             is_markdown = (file_extension == '.md')
 
-            parent_splitter_to_use = markdown_parent_splitter if is_markdown else parent_splitter
-            child_splitter_to_use = markdown_child_splitter if is_markdown else child_splitter
+            parent_strategy = MARKDOWN if is_markdown else config_mgr.get_strategy(file_extension)
+            child_strategy = MARKDOWN if is_markdown else parent_strategy
 
-            self.logger.info(
-                f"处理文档: {file_path}, "
-                f"使用切分器: {'Markdown' if is_markdown else 'ChineseRecursive'}"
+            try:
+                parent_splitter = create_parent_splitter(
+                    parent_strategy, parent_chunk_size, chunk_overlap,
+                    semantic_model_path=semantic_model_path,
+                )
+            except Exception:
+                fallback = cfg.get("semantic_fallback_strategy", RECURSIVE)
+                self.logger.warning(
+                    "语义切分失败，回退到 %s 策略: %s", fallback, file_path
+                )
+                parent_strategy = fallback
+                parent_splitter = create_parent_splitter(
+                    parent_strategy, parent_chunk_size, chunk_overlap,
+                )
+
+            child_splitter = create_child_splitter(
+                child_strategy, child_chunk_size, chunk_overlap,
             )
 
-            parent_docs = parent_splitter_to_use.split_documents([doc])
+            self.logger.info(
+                "处理文档: %s, 策略: %s", file_path, parent_strategy
+            )
+
+            parent_docs = parent_splitter.split_documents([doc])
 
             for j, parent_doc in enumerate(parent_docs):
                 parent_id = f"doc_{i}_parent_{j}"
-                sub_chunks = child_splitter_to_use.split_documents([parent_doc])
+                sub_chunks = child_splitter.split_documents([parent_doc])
 
                 for k, sub_chunk in enumerate(sub_chunks):
                     sub_chunk.metadata["parent_id"] = parent_id

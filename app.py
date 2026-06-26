@@ -97,6 +97,26 @@ class EvalRunRequest(BaseModel):
     dataset: Optional[list] = None
     triggered_by: str = "manual"
 
+class ChunkConfigResponse(BaseModel):
+    default_strategy: str
+    doc_type_strategies: Dict[str, str]
+    semantic_model_path: str
+    semantic_device: str
+    semantic_fallback_strategy: str
+    parent_chunk_size: int
+    child_chunk_size: int
+    chunk_overlap: int
+
+class ChunkConfigUpdate(BaseModel):
+    default_strategy: Optional[str] = None
+    doc_type_strategies: Optional[Dict[str, str]] = None
+    semantic_model_path: Optional[str] = None
+    semantic_device: Optional[str] = None
+    semantic_fallback_strategy: Optional[str] = None
+    parent_chunk_size: Optional[int] = None
+    child_chunk_size: Optional[int] = None
+    chunk_overlap: Optional[int] = None
+
 # ========== Greeting Patterns ==========
 
 GREETING_PATTERNS = [
@@ -500,6 +520,79 @@ async def eval_status(user: dict = Depends(get_current_user)):
         )
 
     return qa_system.eval_service.get_quality_status()
+
+
+# ========== Chunk Config Endpoints ==========
+
+@app.get("/api/chunk-config", response_model=ChunkConfigResponse)
+async def get_chunk_config(user: dict = Depends(require_auth)):
+    from base.chunk_config import ChunkConfigManager
+    mgr = ChunkConfigManager()
+    cfg = mgr.get_config()
+    return ChunkConfigResponse(
+        default_strategy=cfg["default_strategy"],
+        doc_type_strategies=cfg["doc_type_strategies"],
+        semantic_model_path=cfg["semantic_model_path"],
+        semantic_device=cfg["semantic_device"],
+        semantic_fallback_strategy=cfg["semantic_fallback_strategy"],
+        parent_chunk_size=cfg["parent_chunk_size"],
+        child_chunk_size=cfg["child_chunk_size"],
+        chunk_overlap=cfg["chunk_overlap"],
+    )
+
+
+@app.put("/api/chunk-config", response_model=ChunkConfigResponse)
+async def update_chunk_config(
+    update: ChunkConfigUpdate,
+    user: dict = Depends(require_auth),
+):
+    from repositories.user_repo import UserRepository
+    from db_models.base import SessionLocal
+    repo = UserRepository(SessionLocal)
+    if not repo.is_admin_user(user["user_id"]):
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+    from base.chunk_config import ChunkConfigManager
+    mgr = ChunkConfigManager()
+    updates = {k: v for k, v in update.model_dump(exclude_none=True).items()}
+    mgr.update_config(updates)
+    logger.info("Chunk config updated by user %s: %s", user["username"], list(updates.keys()))
+    cfg = mgr.get_config()
+    return ChunkConfigResponse(
+        default_strategy=cfg["default_strategy"],
+        doc_type_strategies=cfg["doc_type_strategies"],
+        semantic_model_path=cfg["semantic_model_path"],
+        semantic_device=cfg["semantic_device"],
+        semantic_fallback_strategy=cfg["semantic_fallback_strategy"],
+        parent_chunk_size=cfg["parent_chunk_size"],
+        child_chunk_size=cfg["child_chunk_size"],
+        chunk_overlap=cfg["chunk_overlap"],
+    )
+
+
+@app.post("/api/chunk-config/reload", response_model=ChunkConfigResponse)
+async def reload_chunk_config(user: dict = Depends(require_auth)):
+    from repositories.user_repo import UserRepository
+    from db_models.base import SessionLocal
+    repo = UserRepository(SessionLocal)
+    if not repo.is_admin_user(user["user_id"]):
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+    from base.chunk_config import ChunkConfigManager
+    mgr = ChunkConfigManager()
+    mgr.reload()
+    logger.info("Chunk config reloaded from config.ini by user %s", user["username"])
+    cfg = mgr.get_config()
+    return ChunkConfigResponse(
+        default_strategy=cfg["default_strategy"],
+        doc_type_strategies=cfg["doc_type_strategies"],
+        semantic_model_path=cfg["semantic_model_path"],
+        semantic_device=cfg["semantic_device"],
+        semantic_fallback_strategy=cfg["semantic_fallback_strategy"],
+        parent_chunk_size=cfg["parent_chunk_size"],
+        child_chunk_size=cfg["child_chunk_size"],
+        chunk_overlap=cfg["chunk_overlap"],
+    )
 
 
 # ========== Query Endpoint ==========

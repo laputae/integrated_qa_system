@@ -31,6 +31,15 @@ class Base(DeclarativeBase):
 
 
 def init_db(config=None):
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE NOT NULL"
+            ))
+            conn.commit()
+    except Exception:
+        pass
     return engine, SessionLocal
 
 
