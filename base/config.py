@@ -109,8 +109,12 @@ class Config():
         # 应用配置
         self.CUSTOMER_SERVICE_PHONE = self.config.get('app', 'customer_service_phone')
         self.VALID_SOURCES = eval(self.config.get('app', 'valid_sources', fallback=["ai", "java", "test", "ops", "bigdata"]))
-        # 日志文件路径
+        # 日志配置
         self.LOG_FILE = self.config.get('logger', 'log_file', fallback='logs/app.log')
+        self.LOG_LEVEL = self.config.get('logger', 'log_level', fallback='INFO')
+        self.LOG_FORMAT = self.config.get('logger', 'log_format', fallback='json')
+        self.LOG_MAX_BYTES = self.config.getint('logger', 'log_max_bytes', fallback=10485760)
+        self.LOG_BACKUP_COUNT = self.config.getint('logger', 'log_backup_count', fallback=5)
 
         # Auth 配置
         self.JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or self.config.get(

@@ -50,6 +50,8 @@ dependencies = [
     "transformers>=5.10.2",
     "unstructured[md]>=0.23.1",
     "uvicorn>=0.49.0",
+    "prometheus-client>=0.23.0",
+    "prometheus-fastapi-instrumentator>=7.1.0",
     "jose>=1.0.0",
     "paddlepaddle-gpu>=2.6.2",
 ]

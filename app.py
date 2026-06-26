@@ -14,7 +14,9 @@ import time
 import re
 
 from main import IntegratedQASystem
+from base import logger
 from base.health import DegradationLevel
+from prometheus_fastapi_instrumentator import Instrumentator
 from gateway.middleware import GatewayMiddleware
 from gateway.auth import (
     create_access_token,
@@ -60,6 +62,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 os.makedirs("static", exist_ok=True)
 
@@ -633,9 +637,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     break
                 await asyncio.sleep(0.01)
     except WebSocketDisconnect as e:
-        print(f"WebSocket disconnected: code={e.code}, reason={e.reason}")
+        logger.info(f"WebSocket disconnected: code={e.code}, reason={e.reason}")
     except Exception as e:
-        print(f"WebSocket error: {str(e)}")
+        logger.error(f"WebSocket error: {str(e)}")
         if websocket.client_state == websocket.client_state.CONNECTED:
             await websocket.send_json({"type": "error", "error": str(e)})
     finally:
@@ -643,7 +647,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if websocket.client_state == websocket.client_state.CONNECTED:
                 await websocket.close()
         except Exception as e:
-            print(f"Error closing WebSocket: {str(e)}")
+            logger.warning(f"Error closing WebSocket: {str(e)}")
 
 
 if __name__ == "__main__":

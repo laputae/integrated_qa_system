@@ -1,10 +1,13 @@
 import json
+import time
+import uuid
 from typing import Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from base import RequestContext, logger
 from gateway.audit import AuditEventType, get_audit_logger
 from gateway.rate_limiter import RateLimiter
 from gateway.security import SecurityFilter
@@ -47,6 +50,10 @@ class GatewayMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         user_agent = request.headers.get("User-Agent", "unknown")
         audit = get_audit_logger()
+
+        request_id = str(uuid.uuid4())
+        RequestContext.set(request_id=request_id)
+        start_time = time.time()
 
         # ---- Layer 1: SecurityFilter (all requests) ----
         if path.startswith("/api/"):
@@ -127,6 +134,9 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                     "username": payload["username"],
                     "tenant_id": tenant_id,
                 }
+                RequestContext.set(
+                    user_id=payload["user_id"], tenant_id=tenant_id
+                )
                 # Rate limit for business endpoints
                 user_id = payload["user_id"]
                 if path == "/api/query" or path == "/api/stream":
@@ -150,5 +160,17 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                 )
 
         # ---- Layer 4: Proceed to business layer ----
-        response = await call_next(request)
-        return response
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception:
+            status_code = 500
+            raise
+        finally:
+            duration_ms = (time.time() - start_time) * 1000
+            logger.info(
+                f"{request.method} {path} -> {status_code} "
+                f"[{duration_ms:.1f}ms]"
+            )

@@ -3,6 +3,10 @@ from mysql_qa import MySQLClient, RedisClient, BM25Search
 from rag_qa import VectorStore, RAGSystem
 from base import logger, Config
 from base.health import SystemHealth, DegradationLevel
+from base.metrics import (
+    qa_query_total, qa_query_latency_seconds,
+    qa_llm_call_total, qa_bm25_hit_total,
+)
 from openai import (
     OpenAI, APITimeoutError, APIConnectionError,
     InternalServerError, RateLimitError,
@@ -187,6 +191,7 @@ class IntegratedQASystem:
                 for chunk in completion:
                     if chunk.choices and chunk.choices[0].delta.content:
                         yield chunk.choices[0].delta.content
+                qa_llm_call_total.labels(status="success").inc()
                 return
             except (APITimeoutError, APIConnectionError,
                     InternalServerError, RateLimitError,
@@ -200,9 +205,11 @@ class IntegratedQASystem:
                     time.sleep(delay)
                 else:
                     self.logger.error(f"LLM调用失败，已达最大重试次数 {max_retries}: {e}")
+                    qa_llm_call_total.labels(status="retry_exhausted").inc()
                     yield f"错误：LLM调用失败 - {e}"
             except Exception as e:
                 self.logger.error(f"LLM调用失败（不可重试）: {e}")
+                qa_llm_call_total.labels(status="failure").inc()
                 yield f"错误：LLM调用失败 - {e}"
                 return
 
@@ -270,7 +277,11 @@ class IntegratedQASystem:
             self.logger.info(f"MySQL答案: {answer}")
             if session_id:
                 self.update_session_history(session_id, user_id, tenant_id, query, answer)
+            qa_bm25_hit_total.inc()
             processing_time = time.time() - start_time
+            source = source_filter or "all"
+            qa_query_total.labels(degradation_level=level.name, source=source).inc()
+            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
             self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
             yield answer, True
             return
@@ -280,6 +291,10 @@ class IntegratedQASystem:
             if level == DegradationLevel.LEVEL3_NO_LLM:
                 self.logger.info("LLM 降级中，返回检索到的原始上下文")
                 collected_answer = self._degraded_rag_retrieve(query, source_filter)
+                processing_time = time.time() - start_time
+                source = source_filter or "all"
+                qa_query_total.labels(degradation_level=level.name, source=source).inc()
+                qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
                 yield collected_answer, True
                 return
 
@@ -295,16 +310,25 @@ class IntegratedQASystem:
             if session_id:
                 self.update_session_history(session_id, user_id, tenant_id, query, collected_answer)
             processing_time = time.time() - start_time
+            source = source_filter or "all"
+            qa_query_total.labels(degradation_level=level.name, source=source).inc()
+            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
             self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
             yield "", True
         elif need_rag and level >= DegradationLevel.LEVEL2_NO_MILVUS:
             self.logger.info(f"RAG 不可用 (降级等级: {level.name})")
             processing_time = time.time() - start_time
+            source = source_filter or "all"
+            qa_query_total.labels(degradation_level=level.name, source=source).inc()
+            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
             self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
             yield "未找到答案", True
         else:
             self.logger.info("未找到答案")
             processing_time = time.time() - start_time
+            source = source_filter or "all"
+            qa_query_total.labels(degradation_level=level.name, source=source).inc()
+            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
             self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
             yield "未找到答案", True
 

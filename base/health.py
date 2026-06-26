@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Dict
 
 from base import logger, Config
+from base.metrics import qa_component_health, qa_degradation_level
 
 
 # ============================================================
@@ -426,7 +427,26 @@ class SystemHealth:
             for name in self._components:
                 self._health_cache[name] = self._run_check(name)
             self._last_full_check = time.time()
+        self._export_metrics()
         return dict(self._health_cache)
+
+    def _export_metrics(self):
+        """Update Prometheus gauges from current health state."""
+        for name, component in self._health_cache.items():
+            qa_component_health.labels(component=name).set(
+                1 if component.status == HealthStatus.HEALTHY else 0
+            )
+        qa_degradation_level.set(int(self._compute_degradation_level()))
+
+    def _compute_degradation_level(self) -> DegradationLevel:
+        """Compute degradation level from cache without TTL refresh (for metrics)."""
+        max_level = DegradationLevel.LEVEL0_FULL
+        for name, component in self._health_cache.items():
+            if component.status == HealthStatus.UNHEALTHY:
+                level = _COMPONENT_DEGRADATION_MAP.get(name)
+                if level is not None and level > max_level:
+                    max_level = level
+        return max_level
 
     def _get_cached_or_refresh(self) -> Dict[str, ComponentHealth]:
         """Return cached results if still fresh, otherwise re-check."""
@@ -438,14 +458,8 @@ class SystemHealth:
 
     def get_degradation_level(self) -> DegradationLevel:
         """Compute current degradation level from cached health status."""
-        health = self._get_cached_or_refresh()
-        max_level = DegradationLevel.LEVEL0_FULL
-        for name, component in health.items():
-            if component.status == HealthStatus.UNHEALTHY:
-                level = _COMPONENT_DEGRADATION_MAP.get(name)
-                if level is not None and level > max_level:
-                    max_level = level
-        return max_level
+        self._get_cached_or_refresh()
+        return self._compute_degradation_level()
 
     def is_ready(self) -> bool:
         """Can the app serve traffic? Level 4 (no MySQL) means not ready."""
