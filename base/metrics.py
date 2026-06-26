@@ -49,6 +49,20 @@ qa_rag_retrieval_latency_seconds = Histogram(
     buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, float('inf')),
 )
 
+# ---- LLM Reranker metrics ----
+
+qa_llm_rerank_total = Counter(
+    'qa_llm_rerank_total',
+    'LLM reranking call results',
+    ['status'],  # success, parse_failure, invalid_indices, out_of_range, duplicate_index, json_error, error
+)
+
+qa_llm_rerank_latency_seconds = Histogram(
+    'qa_llm_rerank_latency_seconds',
+    'LLM reranking latency (listwise call)',
+    buckets=(0.5, 1.0, 2.0, 5.0, 10.0, 30.0, float('inf')),
+)
+
 # ---- Health / degradation metrics ----
 
 qa_component_health = Gauge(

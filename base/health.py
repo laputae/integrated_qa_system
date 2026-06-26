@@ -46,11 +46,12 @@ _COMPONENT_DEGRADATION_MAP = {
     "embedding": DegradationLevel.LEVEL2_NO_MILVUS,
     "reranker": DegradationLevel.LEVEL2_NO_MILVUS,
     "classifier": DegradationLevel.LEVEL2_NO_MILVUS,
+    "llm_reranker": DegradationLevel.LEVEL2_NO_MILVUS,
     "redis": DegradationLevel.LEVEL1_NO_REDIS,
 }
 
 # Odered for display
-_COMPONENT_ORDER = ["mysql", "redis", "milvus", "llm", "embedding", "reranker", "classifier", "eval_quality"]
+_COMPONENT_ORDER = ["mysql", "redis", "milvus", "llm", "embedding", "reranker", "classifier", "llm_reranker", "eval_quality"]
 
 
 # ============================================================
@@ -309,6 +310,31 @@ class HealthChecker:
             result.status = HealthStatus.UNHEALTHY
             result.error_message = str(e)
             self.logger.warning(f"Classifier 健康检查失败: {e}")
+        result.last_checked = time.time()
+        return result
+
+    # ------ LLM Reranker ------
+
+    def check_llm_reranker(self, config: Config) -> ComponentHealth:
+        result = ComponentHealth(name="llm_reranker")
+        try:
+            if not config.LLM_RERANKER_ENABLED:
+                result.status = HealthStatus.HEALTHY
+                result.error_message = "LLM reranker is disabled in config"
+            elif config.LLM_RERANKER_CRITICAL_MIN_LENGTH < 1:
+                result.status = HealthStatus.UNHEALTHY
+                result.error_message = "llm_reranker.critical_min_length must be >= 1"
+            elif config.LLM_RERANKER_LISTWISE_K < 1:
+                result.status = HealthStatus.UNHEALTHY
+                result.error_message = "llm_reranker.listwise_k must be >= 1"
+            elif not config.LLM_RERANKER_CRITICAL_STRATEGIES:
+                result.status = HealthStatus.DEGRADED
+                result.error_message = "No critical strategies configured, LLM reranker will never trigger"
+            else:
+                result.status = HealthStatus.HEALTHY
+        except Exception as e:
+            result.status = HealthStatus.UNHEALTHY
+            result.error_message = str(e)
         result.last_checked = time.time()
         return result
 

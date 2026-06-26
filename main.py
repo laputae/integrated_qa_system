@@ -162,6 +162,8 @@ class IntegratedQASystem:
             lambda: checker.check_reranker(self.vector_store))
         self.health.register_component("classifier",
             lambda: checker.check_classifier(self.rag_system))
+        self.health.register_component("llm_reranker",
+            lambda: checker.check_llm_reranker(self.config))
         self.health.register_component("eval_quality",
             lambda: checker.check_eval_quality(self.eval_service))
 

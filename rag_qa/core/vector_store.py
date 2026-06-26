@@ -238,7 +238,7 @@ class VectorStore:
         return query_embeddings
 
     # 定义方法，执行混合检索并重排序
-    def hybrid_search_with_rerank(self, query, k=conf.RETRIEVAL_K, source_filter=None):
+    def hybrid_search_with_rerank(self, query, k=conf.RETRIEVAL_K, source_filter=None, top_k=None):
         start = time.time()
         # 使用带缓存的查询嵌入
         query_embeddings = self._get_query_embedding_cached(query)
@@ -305,7 +305,8 @@ class VectorStore:
             return []
         if len(parent_docs) < 2:
             qa_rag_retrieval_latency_seconds.observe(time.time() - start)
-            return parent_docs[:conf.CANDIDATE_M]
+            limit = top_k if top_k is not None else conf.CANDIDATE_M
+            return parent_docs[:limit]
 
         # 创建查询与文档内容的配对列表，使用 BGE-Reranker 计算得分
         pairs = [[query, doc.page_content] for doc in parent_docs]
@@ -332,7 +333,8 @@ class VectorStore:
 
         # 返回前 m 个重排序后的文档
         qa_rag_retrieval_latency_seconds.observe(time.time() - start)
-        return ranked_parent_docs[:conf.CANDIDATE_M]
+        limit = top_k if top_k is not None else conf.CANDIDATE_M
+        return ranked_parent_docs[:limit]
 
     def _get_unique_parent_docs(self, sub_chunks):
         # 初始化集合，用于存储已处理的父块内容（去重）

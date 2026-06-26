@@ -92,6 +92,23 @@ class Config():
             'retrieval', 'reranker_score_threshold', fallback=0.0
         )
 
+        # LLM Reranker 配置
+        self.LLM_RERANKER_ENABLED = self.config.getboolean(
+            'llm_reranker', 'enabled', fallback=False
+        )
+        self.LLM_RERANKER_CRITICAL_MIN_LENGTH = self.config.getint(
+            'llm_reranker', 'critical_min_length', fallback=20
+        )
+        self.LLM_RERANKER_CRITICAL_STRATEGIES = [
+            s.strip() for s in self.config.get(
+                'llm_reranker', 'critical_strategies',
+                fallback='假设问题检索,回溯问题检索,子查询检索'
+            ).split(',') if s.strip()
+        ]
+        self.LLM_RERANKER_LISTWISE_K = self.config.getint(
+            'llm_reranker', 'listwise_k', fallback=3
+        )
+
         # 查询分类器配置
         self.CLASSIFIER_CONFIDENCE_THRESHOLD = self.config.getfloat(
             'classifier', 'confidence_threshold', fallback=0.8
