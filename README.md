@@ -15,6 +15,9 @@
 | **多级降级** | 5 级自动降级（Level 0~4），熔断器 + 后台自动恢复，依赖故障时优雅降级而非崩溃 |
 | **生产韧性** | 数据库连接池（pool_size=10, max_overflow=20, pool_pre_ping, pool_recycle），LLM 指数退避重试，批量嵌入 Checkpoint/Resume 断点续传 |
 | **GPU 加速** | PyTorch cu126 (CUDA 12.6) 原生支持；BGE-M3 默认 CPU 运行避免 fp16 类型不匹配，OCR/训练可选用 GPU |
+| **NLI 幻觉检测** | HallucinationGuard SoftGate — mDeBERTa-v3 逐句 NLI 验证，幻觉结果旁路标记而非阻断，WebSocket 实时告警客户端 |
+| **可观测性** | 结构化 JSON 日志（异步安全 RequestContext）+ Prometheus 全量指标（业务+检索+幻觉检测+健康）+ `/metrics` 端点 |
+| **评估自动化** | RAGAS 4 指标评估管道 — 周期执行 + 手动触发 → MySQL 持久化 → 回归检测（连续 N 次低 faithfulness 告警）→ 趋势 API |
 
 ## 架构概览
 
@@ -78,22 +81,27 @@
 integrated_qa_system/
 ├── base/                          # 基础设施
 │   ├── config.py                  # 配置管理（读取 config.ini）
-│   ├── logger.py                  # 日志系统
-│   └── health.py                  # 健康检查 + 多级降级 + 熔断器 + 自动恢复
+│   ├── logger.py                  # 结构化 JSON 日志 + RequestContext（contextvars 异步安全）
+│   ├── health.py                  # 健康检查 + 多级降级 + 熔断器 + 自动恢复
+│   ├── metrics.py                 # Prometheus 业务指标（Counter/Histogram/Gauge，10+ 指标）
+│   └── chunk_config.py            # 自适应 Chunk 配置管理器（线程安全单例，API 热更新）
 │
-├── db_models/                     # SQLAlchemy 数据模型（5 张 ORM 表）
+├── db_models/                     # SQLAlchemy 数据模型（7 张 ORM 表）
 │   ├── base.py                    # 引擎、Session、Base 基类
 │   ├── tenant.py                  # Tenant 模型（多租户）
 │   ├── user.py                    # User 模型（用户认证）
 │   ├── conversation.py            # Conversation 模型（对话历史）
 │   ├── refresh_token.py           # RefreshToken 模型（JWT 刷新令牌）
-│   └── audit_log.py               # AuditLog 模型（审计日志）
+│   ├── audit_log.py               # AuditLog 模型（审计日志）
+│   ├── eval_run.py                # EvalRun 模型（评估任务，含状态/聚合分数/触发方式）
+│   └── eval_result.py             # EvalResult 模型（单题评估结果，含 4 指标分项）
 │
 ├── repositories/                  # 数据访问层
 │   ├── tenant_repo.py             # 租户 CRUD
 │   ├── user_repo.py               # 用户 CRUD
 │   ├── conversation_repo.py       # 会话历史 CRUD
-│   └── audit_repo.py              # 审计日志写入
+│   ├── audit_repo.py              # 审计日志写入
+│   └── eval_repo.py               # 评估数据 CRUD（run + result）
 │
 ├── gateway/                       # API 网关层
 │   ├── auth.py                    # JWT 签发/校验（Access + Refresh Token）、密码哈希
@@ -121,10 +129,13 @@ integrated_qa_system/
 │   │   ├── document_processor.py  # 文档加载 + 父子块分割（传统管线）
 │   │   ├── query_classifier.py    # BERT 查询分类器（通用/专业 + 置信度评分）
 │   │   ├── strategy_selector.py   # LLM 检索策略选择器（Redis 缓存，7 天 TTL）
-│   │   └── prompts.py             # LangChain Prompt 模板（Few-shot + external_context）
+│   │   ├── prompts.py             # LangChain Prompt 模板（Few-shot + external_context + LLM Reranker）
+│   │   └── nli_guard.py           # HallucinationGuard — mDeBERTa-v3 NLI 逐句验证，SoftGate 旁路标记
 │   ├── edu_document_loaders/      # 自定义文档加载器（含 OCR）
-│   ├── edu_text_spliter/          # 中文感知文本分割器
+│   ├── edu_text_spliter/          # 文本分割器（递归/语义/Markdown，含自适应策略工厂）
 │   ├── rag_assesment/             # RAGAS 质量评估
+│   ├── eval/                      # 评估自动化管道
+│   │   └── eval_service.py        # EvalService（周期/手动/回归检测/趋势分析）
 │   ├── classify_data/             # 分类器训练数据
 │   └── models/                    # 本地模型文件
 │       ├── bge-m3/                # BGE-M3 嵌入模型（稠密1024维 + 稀疏）
@@ -140,7 +151,9 @@ integrated_qa_system/
 ├── static/                        # Web 前端（React JSX）
 ├── tests/                         # 测试
 │   ├── test_document_quality.py   # 文档质量评估冒烟测试
-│   └── test_strategy_cache.py     # 策略选择缓存测试
+│   ├── test_strategy_cache.py     # 策略选择缓存测试
+│   ├── test_chunk_config.py       # 自适应 Chunk 配置单元/集成测试
+│   └── test_hallucination_guard.py # HallucinationGuard 单元/集成测试
 ├── main.py                        # 主调度器（IntegratedQASystem + 降级编排）
 ├── app.py                         # FastAPI 主入口（WebSocket + REST + 静态服务 + 健康端点）
 ├── api.py                         # FastAPI SSE 流式接口
@@ -175,6 +188,7 @@ uv sync
 #   - google-bert/bert-base-chinese → rag_qa/models/bert-base-chinese/
 #   - (可选) BAAI/bge-large-zh    → rag_qa/models/bge-large-zh/
 #   - (可选) shibing624/text2vec-large-chinese → rag_qa/models/text2vec-large-chinese/
+#   - (可选) MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7 → rag_qa/models/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7/  (HallucinationGuard)
 ```
 
 ## 配置
@@ -211,6 +225,13 @@ batch_size = 32
 checkpoint_dir = checkpoints/embedding
 cache_ttl = 86400
 
+[chunking]
+default_strategy = recursive             # 默认分割策略: recursive | semantic | markdown
+doc_type_strategies = {}                 # JSON: 按文件扩展名指定策略 {"pdf": "semantic"}
+semantic_model_path =                    # 语义分割模型路径（空=自动从ModelScope下载）
+semantic_device = cpu                    # 语义模型推理设备
+semantic_fallback_strategy = recursive   # 语义分割失败时的回退策略
+
 [classifier]
 confidence_threshold = 0.8         # BERT 分类置信度低于此值时强制走 RAG
 
@@ -225,6 +246,12 @@ retrieval_k = 5
 candidate_m = 2
 max_workers = 3                    # 子查询并行检索最大线程数
 reranker_score_threshold = 0.3     # Reranker 分数阈值，低于此分数的文档被过滤
+
+[llm_reranker]
+enabled = false                    # LLM 二次重排序开关
+critical_min_length = 20           # 触发关键查询的最短字符数
+critical_strategies = 假设问题检索,回溯问题检索,子查询检索  # 触发重排序的策略列表
+listwise_k = 3                     # 关键查询的候选文档池大小
 
 [retry]
 max_retries = 3                    # LLM 调用最大重试次数
@@ -251,8 +278,30 @@ circuit_breaker_cooldown = 30      # 熔断器冷却时间（秒）
 valid_sources = ["ai", "java", "test", "ops", "bigdata"]
 customer_service_phone = 12345678
 
+[hallucination_guard]
+enabled = false                          # NLI 幻觉检测开关
+model = MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7  # HF 模型 ID 或本地路径
+entailment_threshold = 0.5              # 蕴含分数阈值（低于此值视为不支持）
+contradiction_threshold = 0.5           # 矛盾分数阈值（高于此值标记幻觉）
+
+[eval]
+eval_llm_model =                        # 评估用 LLM（空=沿用 [llm] model）
+eval_llm_base_url =                     # 评估用 LLM 地址（空=沿用 [llm] base_url）
+eval_embedding_model = mxbai-embed-large # 评估用嵌入模型
+eval_embedding_base_url = http://localhost:11434  # 评估用嵌入服务地址
+eval_interval_seconds = 21600           # 周期评估间隔（秒，0=禁用），默认 6 小时
+regression_faithfulness_threshold = 0.7 # faithfulness 回归告警阈值
+regression_consecutive_runs = 3         # 连续 N 次低于阈值触发回归告警
+quality_warning_threshold = 0.7         # 质量黄色预警阈值
+quality_critical_threshold = 0.4        # 质量红色严重阈值
+default_dataset_path = rag_qa/rag_assesment/rag_evaluate_data.json
+
 [logger]
 log_file = logs/app.log
+log_level = INFO
+log_format = json                  # json | text：文件日志输出格式
+log_max_bytes = 10485760           # 单个日志文件最大字节数（10 MB）
+log_backup_count = 5               # 滚动保留的日志文件数
 ```
 
 > **安全提示**：生产环境请通过环境变量注入敏感信息（API Key、密码），`config.py` 已支持 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`JWT_SECRET_KEY` 等环境变量覆盖。
@@ -531,6 +580,15 @@ API 端点：
 | GET | `/api/history/{session_id}` | 获取对话历史 | 必须 |
 | POST | `/api/history/delete` | 批量删除对话历史（逻辑删除） | 必须 |
 | GET | `/api/sources` | 获取支持的学科类别 | 无 |
+| GET | `/metrics` | Prometheus 指标端点（业务 + HTTP 指标） | 无 |
+| GET | `/api/chunk-config` | 获取当前 Chunk 配置 | 必须 |
+| PUT | `/api/chunk-config` | 热更新 Chunk 配置（内存生效，不持久化） | 必须 |
+| POST | `/api/chunk-config/reload` | 从 config.ini 重新加载 Chunk 配置 | 必须 |
+| POST | `/api/eval/run` | 手动触发一次评估 | 必须 |
+| GET | `/api/eval/runs` | 查询历史评估列表（分页） | 必须 |
+| GET | `/api/eval/runs/{run_id}` | 查看单次评估详情（含每题分数） | 必须 |
+| GET | `/api/eval/trends` | 获取指标趋势数据（用于仪表盘） | 必须 |
+| GET | `/api/eval/status` | 当前质量概览（最新分数 + 回归状态 + 趋势） | 必须 |
 
 ### 方式二：SSE 流式接口
 
@@ -673,6 +731,132 @@ Prompt 模板升级为 Few-shot 格式，包含「正常回答」和「无法回
 
 RAG 接口支持 `external_context` 参数，允许上游编排层（如 LangGraph Agent）将 Function Calling 的返回结果注入 Prompt 模板的 `{external_context}` 占位符。当编排层已通过工具调用获取到外部数据时，无需依赖文档检索即可丰富 LLM 上下文。
 
+### 自适应 Chunk 配置
+
+`ChunkConfigManager` 线程安全单例管理文档分割策略，支持按文件类型差异化配置，通过 API 运行时热更新：
+
+**三种分割策略**：
+
+| 策略 | 实现 | 适用场景 |
+|------|------|----------|
+| **Recursive**（默认） | `ChineseRecursiveTextSplitter`，在中文标点边界递归分块 | 通用中文文档 |
+| **Semantic** | `AliTextSplitter`，基于 ModelScope BERT 文档分割模型进行语义段落检测 | PDF/长文段落语义连贯性要求高 |
+| **Markdown** | LangChain `MarkdownTextSplitter`，结构感知 | `.md` 文件（自动强制） |
+
+**两层架构**：父块由所选策略分割（保持段落完整性），子块始终由递归分割器在父块基础上细分（提高检索精度）。
+
+**配置方式**：
+- `config.ini` `[chunking]` 节：`default_strategy`、`doc_type_strategies`（JSON 字典，按文件扩展名映射）、`semantic_model_path`、`semantic_device`、`semantic_fallback_strategy`
+- API 热更新：`GET/PUT /api/chunk-config` 和 `POST /api/chunk-config/reload`
+- 语义模型懒加载，仅在首次使用时初始化，`semantic_fallback_strategy` 在模型加载失败时自动降级
+
+### LLM-as-Reranker — 关键查询精度提升
+
+BGE-Reranker CrossEncoder 重排序之后，对**关键查询**追加第二层 LLM listwise 重排序，以语义理解进一步提升上下文精准度：
+
+**触发条件**（三项同时满足）：
+1. `[llm_reranker] enabled = true`
+2. 查询长度 ≥ `critical_min_length`（默认 20 字符）
+3. 检索策略属于 `critical_strategies` 列表（默认：HyDE、回溯、子查询——即复杂查询）
+
+**工作流程**：
+1. 检测到关键查询时，候选文档池扩展至 `listwise_k`（默认 3）
+2. 文档截断至 800 字符，编号后发送至 LLM
+3. LLM 输出 JSON 数组，按相关性从高到低排列文档索引
+4. 结果写入文档元数据（`llm_rerank_position`、`llm_rerank_source`），便于溯源
+5. **健壮错误处理**：JSON 解析失败、索引越界、索引不唯一、索引数量不匹配等异常均静默回退至 BGE-Reranker 原始顺序，不影响主流程
+
+Prometheus 指标 `qa_llm_rerank_total`（按 `status` 分类）和 `qa_llm_rerank_latency_seconds` 记录每次重排序结果和耗时。
+
+### HallucinationGuard — NLI 实时幻觉检测
+
+输出端验证层，在 LLM 流式生成完成后运行，将回答拆分为原子声明并逐一与检索上下文进行 NLI 验证。
+
+**设计理念：SoftGate** — 检测到幻觉时**不阻断响应**，而是旁路标记。WebSocket 服务端在流式传输完成后向客户端推送 `hallucination_warning` 消息，记录详细验证结果。
+
+**工作流程**：
+
+```
+LLM 流式生成完成
+  │
+  ▼
+答案拆分为原子声明（按中文句末标点、编号列表、项目符号分割）
+  │
+  ▼
+逐声明 NLI 验证（premise=检索上下文, hypothesis=声明）
+  mDeBERTa-v3-base-xnli → {entailment, neutral, contradiction}
+  │
+  ├── 矛盾分数 > 阈值 且 > 蕴含分数 → 标记为 contradicted
+  └── 全部通过 → passed
+  │
+  ▼
+结果写入 HallucinationResult → WebSocket 推送 warning（如已标记）
+```
+
+**配置**（`[hallucination_guard]`）：
+- `enabled`：总开关（默认 false），开启后模型在 RAGSystem 初始化时懒加载
+- `model`：HuggingFace 模型 ID（默认 `MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7`），支持本地缓存路径
+- `entailment_threshold` / `contradiction_threshold`：判决阈值
+
+**指标**：`qa_hallucination_guard_total`（`result`: passed / flagged / no_claims / error）和 `qa_hallucination_guard_latency_seconds`。
+
+### 结构化 JSON 日志
+
+`base/logger.py` 提供生产级日志基础设施：
+
+- **`RequestContext`**：基于 `contextvars` 的异步安全请求级上下文（`request_id`、`user_id`、`tenant_id`），在所有协程间隔离传递。提供 `set()`、`get()`、`clear()` 静态方法和 `ctx()` 上下文管理器
+- **`JsonFormatter`**：文件日志输出为单行 JSON，包含 timestamp、level、logger、message、module、function、line 及可选的 request_id/user_id/tenant_id，异常信息序列化为字符串
+- **`RotatingFileHandler`**：按 `log_max_bytes` 和 `log_backup_count` 滚动
+- 控制台输出保持人类可读的纯文本格式
+- `LOG_FORMAT` 配置可选择 `json`（文件）或 `text`
+- `get_logger(name)` 创建子 logger，通过传播继承 EduRAG 根 logger 的 handler 配置
+
+### Prometheus 指标采集
+
+`base/metrics.py` 定义 10+ 业务指标，均注册到 Prometheus 默认注册表，由 `prometheus-fastapi-instrumentator` 统一暴露至 `GET /metrics`：
+
+| 指标 | 类型 | 标签 | 说明 |
+|------|------|------|------|
+| `qa_query_total` | Counter | `degradation_level`, `source` | 用户查询总量 |
+| `qa_query_latency_seconds` | Histogram | `degradation_level` | 端到端查询延迟（0.1s~60s） |
+| `qa_llm_call_total` | Counter | `status` | LLM 调用结果（success/failure/retry_exhausted） |
+| `qa_bm25_hit_total` | Counter | — | BM25 缓存命中次数 |
+| `qa_rag_retrieval_latency_seconds` | Histogram | — | RAG 文档检索延迟（0.01s~5s） |
+| `qa_llm_rerank_total` | Counter | `status` | LLM 重排序结果 |
+| `qa_llm_rerank_latency_seconds` | Histogram | — | LLM 重排序延迟（0.5s~30s） |
+| `qa_hallucination_guard_total` | Counter | `result` | 幻觉检测结果 |
+| `qa_hallucination_guard_latency_seconds` | Histogram | — | NLI 验证延迟（0.1s~5s） |
+| `qa_component_health` | Gauge | `component` | 组件健康状态（1=正常, 0=异常） |
+| `qa_degradation_level` | Gauge | — | 当前降级等级（0~4） |
+
+HTTP 层指标（请求数、延迟等）由 `prometheus-fastapi-instrumentator` 自动采集。所有指标可直接接入 Grafana 仪表盘实现可视化监控。
+
+### 评估自动化管道
+
+`EvalService` 将 RAGAS 评估从手动脚本升级为可持续运行的质量监控管道：
+
+**核心能力**：
+- **周期评估**：`eval_interval_seconds` 间隔自动执行（默认 6 小时），`0` 禁用
+- **手动触发**：`POST /api/eval/run` 即时触发一次评估
+- **数据持久化**：每次评估创建 `EvalRun` 记录，每题结果写入 `EvalResult`（含 4 项指标分项分数），存储于 MySQL
+- **回归检测**：监控 `faithfulness` 指标——连续 `regression_consecutive_runs` 次低于 `regression_faithfulness_threshold` 时自动检测到回归
+- **质量分级**：`faithfulness ≥ 0.7` 为 good，`< 0.7` 为 warning，`< 0.4` 为 critical
+- **趋势分析**：通过最近 5 次 `faithfulness` 值的移动平均对比，输出 improving / stable / declining 趋势方向
+
+**评估管线**（`run_evaluation`）：
+1. 加载评估数据集（默认从 `default_dataset_path` 读取 JSON）
+2. 依次将每个问题送入生产 RAG 管线（检索 → 生成），采集 answer 和 contexts
+3. 组装 RAGAS Dataset，调用 `ragas.evaluate()` 计算 4 项指标
+4. 回填每题分数 → 计算聚合均值 → 写入 run 记录
+5. 执行回归检测（独立于 run 状态，检测失败不影响 run 完成）
+
+**API 端点**：
+- `POST /api/eval/run` — 手动触发评估
+- `GET /api/eval/runs` — 历史评估列表（分页）
+- `GET /api/eval/runs/{run_id}` — 单次评估详情（含每题分数）
+- `GET /api/eval/trends` — 指标趋势（用于 Grafana 等仪表盘）
+- `GET /api/eval/status` — 质量概览（最新分数 + 回归状态 + 趋势方向）
+
 ### 网关安全体系（企业级防护）
 
 三层中间件（`gateway/middleware.py`）对所有 `/api/` 请求依次执行，构建纵深防御：
@@ -712,12 +896,20 @@ RAG 接口支持 `external_context` 参数，允许上游编排层（如 LangGra
 
 ## 评估
 
+系统提供两层评估能力：
+
+### 手动脚本
+
 ```bash
 cd rag_qa/rag_assesment
 uv run python rag_as.py
 ```
 
-使用 RAGAS 框架评估四个指标：**Faithfulness**、**Answer Relevancy**、**Context Precision**、**Context Recall**。
+使用 RAGAS 框架评估四个指标：**Faithfulness**、**Answer Relevancy**、**Context Precision**、**Context Recall**。支持 OpenAI 兼容接口和本地 Ollama 模型。
+
+### 自动化管道（推荐）
+
+详见上方「评估自动化管道」章节。通过 `EvalService` 将评估升级为持续运行的质量监控管道，支持周期执行、手动触发、回归检测和趋势分析，结果持久化 MySQL 并通过 REST API 暴露。
 
 ## License
 
