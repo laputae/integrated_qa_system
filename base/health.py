@@ -47,11 +47,12 @@ _COMPONENT_DEGRADATION_MAP = {
     "reranker": DegradationLevel.LEVEL2_NO_MILVUS,
     "classifier": DegradationLevel.LEVEL2_NO_MILVUS,
     "llm_reranker": DegradationLevel.LEVEL2_NO_MILVUS,
+    "hallucination_guard": DegradationLevel.LEVEL2_NO_MILVUS,
     "redis": DegradationLevel.LEVEL1_NO_REDIS,
 }
 
 # Odered for display
-_COMPONENT_ORDER = ["mysql", "redis", "milvus", "llm", "embedding", "reranker", "classifier", "llm_reranker", "eval_quality"]
+_COMPONENT_ORDER = ["mysql", "redis", "milvus", "llm", "embedding", "reranker", "classifier", "llm_reranker", "hallucination_guard", "eval_quality"]
 
 
 # ============================================================
@@ -330,6 +331,36 @@ class HealthChecker:
             elif not config.LLM_RERANKER_CRITICAL_STRATEGIES:
                 result.status = HealthStatus.DEGRADED
                 result.error_message = "No critical strategies configured, LLM reranker will never trigger"
+            else:
+                result.status = HealthStatus.HEALTHY
+        except Exception as e:
+            result.status = HealthStatus.UNHEALTHY
+            result.error_message = str(e)
+        result.last_checked = time.time()
+        return result
+
+    # ------ HallucinationGuard ------
+
+    def check_hallucination_guard(self, rag_system) -> ComponentHealth:
+        result = ComponentHealth(name="hallucination_guard")
+        if rag_system is None:
+            result.status = HealthStatus.UNKNOWN
+            result.error_message = "RAGSystem 未初始化"
+            result.last_checked = time.time()
+            return result
+
+        guard = getattr(rag_system, 'hallucination_guard', None)
+        if guard is None:
+            result.status = HealthStatus.DEGRADED
+            result.error_message = "HallucinationGuard 未启用 (hallucination_guard.enabled=false)"
+            result.last_checked = time.time()
+            return result
+
+        # Verify the model is loaded and callable
+        try:
+            if guard.model is None:
+                result.status = HealthStatus.UNHEALTHY
+                result.error_message = "NLI model not loaded"
             else:
                 result.status = HealthStatus.HEALTHY
         except Exception as e:

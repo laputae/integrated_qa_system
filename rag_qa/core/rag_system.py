@@ -46,6 +46,18 @@ class RAGSystem:
         self.strategy_selector = StrategySelector(redis_client=redis_client)
         #   Redis 缓存客户端（用于缓存 LLM 生成的中间结果）
         self.redis_client = redis_client
+        #   HallucinationGuard — 按需初始化
+        self.hallucination_guard = None
+        self._last_guard_result = None  # 供 API 层读取最近一次检测结果
+        if conf.HALLUCINATION_GUARD_ENABLED:
+            try:
+                from nli_guard import HallucinationGuard
+                self.hallucination_guard = HallucinationGuard(
+                    model_name=conf.HALLUCINATION_GUARD_MODEL,
+                    device='cpu',
+                )
+            except Exception as e:
+                logger.warning(f"HallucinationGuard 初始化失败 (继续运行): {e}")
         #   定义方法，生成答案
 
     #   定义类似私有方法，使用回溯问题进行检索 （注意讲义中没有加source_filter参数，这里补齐了）
@@ -410,6 +422,16 @@ class RAGSystem:
         if skip_rag:
             logger.info(f"查询为通用知识（置信度 {confidence:.4f} >= {threshold}），直接调用 LLM")
             context = ''
+            prompt_input = RAGPrompts.general_knowledge_prompt().format(question=query)
+            try:
+                for token in self.llm(prompt_input):
+                    yield token
+                process_time = time.time() - start_time
+                logger.info(f'LLM通用知识查询处理完成（耗时：{process_time:.2f}s, 查询：{query})')
+            except Exception as e:
+                logger.error(f'调用LLM失败:{e}')
+                yield f'抱歉，处理问题时出错，请你联系人工客服：{conf.CUSTOMER_SERVICE_PHONE}'
+            return
         else:
             if source_filter:
                 logger.info(f"指定了学科过滤 source_filter={source_filter}，强制执行 RAG 流程")
@@ -443,9 +465,30 @@ class RAGSystem:
                                               phone=conf.CUSTOMER_SERVICE_PHONE,
                                               external_context=external_context or "无")
         try:
-            # 使用大模型获得输出结果：
+            # 流式输出 + 收集完整回答用于 NLI 验证
+            collected_tokens = []
             for token in self.llm(prompt_input):
+                collected_tokens.append(token)
                 yield token
+            full_answer = "".join(collected_tokens)
+
+            # 生成后 NLI 幻觉检测（SoftGate：仅记录，不阻断）
+            if self.hallucination_guard and context:
+                try:
+                    self._last_guard_result = self.hallucination_guard.verify(
+                        full_answer, context
+                    )
+                    if self._last_guard_result.is_hallucinated:
+                        logger.warning(
+                            f"HallucinationGuard 标记 (查询: '{query[:50]}...'): "
+                            f"{self._last_guard_result.details}"
+                        )
+                except Exception as e:
+                    self._last_guard_result = None
+                    logger.warning(f"HallucinationGuard 验证异常: {e}")
+            else:
+                self._last_guard_result = None
+
             process_time = time.time() - start_time
             logger.info(f'LLM查询处理完成（耗时：{process_time:.2f}s, 查询：{query})')
         except Exception as e:

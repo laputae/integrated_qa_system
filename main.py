@@ -164,6 +164,8 @@ class IntegratedQASystem:
             lambda: checker.check_classifier(self.rag_system))
         self.health.register_component("llm_reranker",
             lambda: checker.check_llm_reranker(self.config))
+        self.health.register_component("hallucination_guard",
+            lambda: checker.check_hallucination_guard(self.rag_system))
         self.health.register_component("eval_quality",
             lambda: checker.check_eval_quality(self.eval_service))
 
@@ -309,6 +311,10 @@ class IntegratedQASystem:
             ):
                 collected_answer += token
                 yield token, False
+            # 读取 HallucinationGuard 最近一次检测结果
+            self._last_guard_result = getattr(
+                self.rag_system, '_last_guard_result', None
+            )
             if session_id:
                 self.update_session_history(session_id, user_id, tenant_id, query, collected_answer)
             processing_time = time.time() - start_time

@@ -63,6 +63,20 @@ qa_llm_rerank_latency_seconds = Histogram(
     buckets=(0.5, 1.0, 2.0, 5.0, 10.0, 30.0, float('inf')),
 )
 
+# ---- HallucinationGuard metrics ----
+
+qa_hallucination_guard_total = Counter(
+    'qa_hallucination_guard_total',
+    'HallucinationGuard verification results',
+    ['result'],  # passed | flagged | no_claims | error
+)
+
+qa_hallucination_guard_latency_seconds = Histogram(
+    'qa_hallucination_guard_latency_seconds',
+    'HallucinationGuard per-query NLI verification latency',
+    buckets=(0.1, 0.2, 0.5, 1.0, 2.0, 5.0, float('inf')),
+)
+
 # ---- Health / degradation metrics ----
 
 qa_component_health = Gauge(

@@ -89,7 +89,7 @@ class Config():
 
         # Reranker 分数阈值（低于该分数的文档将被过滤）
         self.RERANKER_SCORE_THRESHOLD = self.config.getfloat(
-            'retrieval', 'reranker_score_threshold', fallback=0.0
+            'retrieval', 'reranker_score_threshold', fallback=0.3
         )
 
         # LLM Reranker 配置
@@ -186,6 +186,20 @@ class Config():
         )
         self.HEALTH_CIRCUIT_BREAKER_COOLDOWN = self.config.getint(
             'health', 'circuit_breaker_cooldown', fallback=30
+        )
+
+        # HallucinationGuard 配置
+        self.HALLUCINATION_GUARD_ENABLED = self.config.getboolean(
+            'hallucination_guard', 'enabled', fallback=False
+        )
+        self.HALLUCINATION_GUARD_MODEL = self.config.get(
+            'hallucination_guard', 'model', fallback='MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7'
+        )
+        self.HALLUCINATION_GUARD_ENTAILMENT_THRESHOLD = self.config.getfloat(
+            'hallucination_guard', 'entailment_threshold', fallback=0.5
+        )
+        self.HALLUCINATION_GUARD_CONTRADICTION_THRESHOLD = self.config.getfloat(
+            'hallucination_guard', 'contradiction_threshold', fallback=0.5
         )
 
 

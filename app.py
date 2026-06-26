@@ -721,6 +721,17 @@ async def websocket_endpoint(websocket: WebSocket):
                         "session_id": session_id
                     })
                 if is_complete:
+                    # HallucinationGuard 结果通知
+                    guard_result = getattr(qa_system, '_last_guard_result', None)
+                    if guard_result is not None and guard_result.is_hallucinated:
+                        if websocket.client_state == websocket.client_state.CONNECTED:
+                            await websocket.send_json({
+                                "type": "hallucination_warning",
+                                "message": "部分回答内容可能缺乏文档依据，建议核实后使用。",
+                                "details": guard_result.details,
+                                "score": guard_result.score,
+                                "session_id": session_id,
+                            })
                     if websocket.client_state == websocket.client_state.CONNECTED:
                         await websocket.send_json({
                             "type": "end", "session_id": session_id,
