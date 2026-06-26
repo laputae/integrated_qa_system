@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 # 导入 hashlib 模块，用于生成唯一 ID 的哈希值
 import hashlib
-import sys, os
+import sys, os, time
 # 获取当前文件所在目录的绝对路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # print(f'current_dir--》{current_dir}')
@@ -22,6 +22,7 @@ project_root = os.path.dirname(rag_qa_path)
 sys.path.insert(0, project_root)
 from document_processor import *
 from base import logger, Config
+from base.metrics import qa_rag_retrieval_latency_seconds
 from embedding_registry import (
     create_milvus_model, get_dense_dim, supports_sparse, batch_embed
 )
@@ -238,6 +239,7 @@ class VectorStore:
 
     # 定义方法，执行混合检索并重排序
     def hybrid_search_with_rerank(self, query, k=conf.RETRIEVAL_K, source_filter=None):
+        start = time.time()
         # 使用带缓存的查询嵌入
         query_embeddings = self._get_query_embedding_cached(query)
         # 获取查询的稠密向量
@@ -298,11 +300,12 @@ class VectorStore:
         # print(f'parent_docs--》{parent_docs}')
         # print(f'parent_docs--》{len(parent_docs)}')
         # 如果只有0或1个文档，直接返回跳过重排序
-        if len(parent_docs) < 2:
-            return parent_docs[:conf.CANDIDATE_M]
-
         if not parent_docs:
+            qa_rag_retrieval_latency_seconds.observe(time.time() - start)
             return []
+        if len(parent_docs) < 2:
+            qa_rag_retrieval_latency_seconds.observe(time.time() - start)
+            return parent_docs[:conf.CANDIDATE_M]
 
         # 创建查询与文档内容的配对列表，使用 BGE-Reranker 计算得分
         pairs = [[query, doc.page_content] for doc in parent_docs]
@@ -328,6 +331,7 @@ class VectorStore:
             ranked_parent_docs = kept
 
         # 返回前 m 个重排序后的文档
+        qa_rag_retrieval_latency_seconds.observe(time.time() - start)
         return ranked_parent_docs[:conf.CANDIDATE_M]
 
     def _get_unique_parent_docs(self, sub_chunks):
