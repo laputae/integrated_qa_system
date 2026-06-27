@@ -459,6 +459,12 @@ class SystemHealth:
                 component.consecutive_failures = 0
                 component.status = HealthStatus.HEALTHY
                 component.error_message = ""
+            elif result.status == HealthStatus.DEGRADED:
+                # Degraded means operational but at reduced capacity (e.g. disabled
+                # features). Do NOT promote to UNHEALTHY — that falsely triggers
+                # degradation levels and blocks the RAG pipeline.
+                component.status = HealthStatus.DEGRADED
+                component.error_message = result.error_message
             else:
                 cb.record_failure()
                 component.consecutive_failures += 1
