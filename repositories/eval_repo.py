@@ -14,9 +14,14 @@ class EvalRepository:
 
     # ---- Run CRUD ----
 
-    def create_run(self, triggered_by: str = "manual") -> EvalRun:
+    def create_run(self, triggered_by: str = "manual",
+                   chunk_config_snapshot: dict | None = None) -> EvalRun:
         with self.session_factory() as session:
-            run = EvalRun(status="running", triggered_by=triggered_by)
+            run = EvalRun(
+                status="running",
+                triggered_by=triggered_by,
+                chunk_config_snapshot=chunk_config_snapshot,
+            )
             session.add(run)
             session.commit()
             session.refresh(run)

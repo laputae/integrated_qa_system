@@ -24,7 +24,8 @@ class EvalService:
     # ================================================================
 
     def run_evaluation(self, dataset: list | None = None,
-                       triggered_by: str = "manual") -> dict:
+                       triggered_by: str = "manual",
+                       chunk_config_snapshot: dict | None = None) -> dict:
         """Run a full RAGAS evaluation synchronously (call via asyncio.to_thread)."""
         start_time = time.time()
 
@@ -38,7 +39,10 @@ class EvalService:
             return {"error": "评估数据集为空"}
 
         # 2. Create run record
-        run = self.repo.create_run(triggered_by=triggered_by)
+        run = self.repo.create_run(
+            triggered_by=triggered_by,
+            chunk_config_snapshot=chunk_config_snapshot,
+        )
         run_id = run.id
         self.logger.info(f"[Eval] 开始评估 run_id={run_id}, 问题数={len(dataset)}, 触发方式={triggered_by}")
 
@@ -124,10 +128,13 @@ class EvalService:
         }
 
     async def run_evaluation_async(self, dataset: list | None = None,
-                                   triggered_by: str = "manual") -> dict:
+                                   triggered_by: str = "manual",
+                                   chunk_config_snapshot: dict | None = None) -> dict:
         """Async wrapper for run_evaluation."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.run_evaluation, dataset, triggered_by)
+        return await loop.run_in_executor(
+            None, self.run_evaluation, dataset, triggered_by, chunk_config_snapshot,
+        )
 
     def get_quality_status(self) -> dict:
         """Current quality snapshot for health check / status API."""

@@ -364,7 +364,9 @@ class TestEvalServiceRunEvaluation:
         assert result["total_questions"] == 3
         assert "faithfulness" in result["metrics"]
         assert "answer_relevancy" in result["metrics"]
-        repo.create_run.assert_called_once_with(triggered_by="manual")
+        repo.create_run.assert_called_once_with(
+            triggered_by="manual", chunk_config_snapshot=None,
+        )
         repo.complete_run.assert_called_once()
 
     def test_run_evaluation_pipeline_error(self):
@@ -693,10 +695,10 @@ class TestEvalConfig:
     def test_config_eval_defaults(self):
         from base.config import Config
         config = Config()
-        assert config.EVAL_INTERVAL_SECONDS == 86400
-        assert config.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD == 0.6
+        assert config.EVAL_INTERVAL_SECONDS == 21600
+        assert config.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD == 0.7
         assert config.EVAL_REGRESSION_CONSECUTIVE_RUNS == 3
-        assert config.EVAL_QUALITY_WARNING_THRESHOLD == 0.6
+        assert config.EVAL_QUALITY_WARNING_THRESHOLD == 0.7
         assert config.EVAL_QUALITY_CRITICAL_THRESHOLD == 0.4
 
     def test_config_eval_embedding(self):

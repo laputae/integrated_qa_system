@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Index, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, Float, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db_models.base import Base
@@ -21,6 +21,7 @@ class EvalRun(Base):
     avg_context_precision: Mapped[float | None] = mapped_column(Float, nullable=True)
     avg_context_recall: Mapped[float | None] = mapped_column(Float, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chunk_config_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     triggered_by: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), server_default=func.now(), nullable=False
