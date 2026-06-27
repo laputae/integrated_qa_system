@@ -61,11 +61,14 @@ class HallucinationGuard:
     from the LLM output as entailed/neutral/contradicted by the context.
     """
 
-    def __init__(self, model_name: str = None, device: str = "cpu"):
+    def __init__(self, model_name: str = None, device: str = None):
         if model_name is None:
             model_name = conf.HALLUCINATION_GUARD_MODEL
 
-        self.device = device
+        if device is None:
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        else:
+            self.device = device
         self.logger = logger
 
         # Resolve model path: local models/ dir first, then HuggingFace hub
@@ -80,11 +83,13 @@ class HallucinationGuard:
         start = time.time()
         self.tokenizer = AutoTokenizer.from_pretrained(model_source)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_source)
-        self.model.to(device)
+        if self.device == "cuda":
+            self.model.half()
+        self.model.to(self.device)
         self.model.eval()
 
         load_time = time.time() - start
-        self.logger.info(f"HallucinationGuard 模型加载完成 (设备: {device}, 耗时: {load_time:.2f}s)")
+        self.logger.info(f"HallucinationGuard 模型加载完成 (设备: {self.device}, 耗时: {load_time:.2f}s)")
 
         # Configurable thresholds
         self.entailment_threshold = conf.HALLUCINATION_GUARD_ENTAILMENT_THRESHOLD

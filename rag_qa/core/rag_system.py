@@ -54,7 +54,6 @@ class RAGSystem:
                 from nli_guard import HallucinationGuard
                 self.hallucination_guard = HallucinationGuard(
                     model_name=conf.HALLUCINATION_GUARD_MODEL,
-                    device='cpu',
                 )
             except Exception as e:
                 logger.warning(f"HallucinationGuard 初始化失败 (继续运行): {e}")

@@ -8,6 +8,7 @@ from sentence_transformers import CrossEncoder
 # 导入 hashlib 模块，用于生成唯一 ID 的哈希值
 import hashlib
 import sys, os, time
+import torch
 # 获取当前文件所在目录的绝对路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
 # print(f'current_dir--》{current_dir}')
@@ -69,12 +70,14 @@ class VectorStore:
         # 设置日志记录器
         self.logger = logger
         # 检查CUDA是否可用
-        self.device = 'cpu'
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         # 日志提醒使用的是什么设备
-        self.logger.info(f"使用设置：{self.device}")
+        self.logger.info(f"使用设备：{self.device}")
         # 初始化 BGE-Reranker 模型，用于重排序检索结果
         reranker_path = os.path.join(rag_qa_path, 'models', 'bge-reranker-large')
         self.reranker = CrossEncoder(reranker_path, device=self.device)
+        if self.device == "cuda":
+            self.reranker.model.half()
         self.reranker_score_threshold = conf.RERANKER_SCORE_THRESHOLD
         # 通过注册表获取嵌入模型
         model_name = conf.EMBEDDING_MODEL
