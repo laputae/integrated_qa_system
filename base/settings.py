@@ -114,6 +114,17 @@ class AppSettings(BaseSettings):
             )
         return v
 
+    @field_validator("metrics_auth_user", "metrics_auth_password")
+    @classmethod
+    def metrics_auth_must_be_set_in_prod(cls, v: str, info: ValidationInfo) -> str:
+        security_mode = os.environ.get("SECURITY_MODE", "dev")
+        if security_mode == "prod" and not v:
+            raise ValueError(
+                f"{info.field_name} must be set via environment variable in production mode "
+                "to protect the /metrics endpoint."
+            )
+        return v
+
     @field_validator("valid_sources")
     @classmethod
     def valid_sources_must_be_json_array(cls, v: str) -> str:
