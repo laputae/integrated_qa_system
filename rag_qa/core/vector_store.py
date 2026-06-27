@@ -93,7 +93,7 @@ class VectorStore:
                 f"模型 '{model_name}' 不支持稀疏向量，混合检索将降级为纯稠密检索"
             )
         # 初始化 Milvus 客户端，连接到指定主机和数据库
-        self.client = MilvusClient(uri=f"http://{self.host}:{self.port}", db_name=self.database)
+        self.client = MilvusClient(uri=f"http://{self.host}:{self.port}", db_name=self.database, timeout=conf.MILVUS_TIMEOUT)
         # 调用方法创建或加载 Milvus 集合
         self._create_or_load_collection()
 

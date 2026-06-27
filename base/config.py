@@ -56,6 +56,7 @@ class Config():
         self.MILVUS_DATABASE_NAME = self.config.get('milvus', 'database_name', fallback='itcast')
         # Milvus 集合名
         self.MILVUS_COLLECTION_NAME = self.config.get('milvus', 'collection_name', fallback='edurag_final')
+        self.MILVUS_TIMEOUT = self.config.getint('milvus', 'timeout', fallback=10)
 
         # LLM 配置
         # LLM 模型名
