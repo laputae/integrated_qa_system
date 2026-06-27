@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from db_models.tenant import Tenant
 
@@ -31,5 +31,5 @@ class TenantRepository:
             return tenant
         try:
             return self.create(name)
-        except Exception:
+        except IntegrityError:
             return self.get_by_name(name)

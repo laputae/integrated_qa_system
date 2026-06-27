@@ -110,7 +110,7 @@ class IntegratedQASystem:
             self.logger.warning("RAGSystem 初始化跳过: VectorStore 或 LLM 不可用")
             return None
         try:
-            rag = RAGSystem(self.vector_store, self.call_dashscope, redis_client=self.redis_client)
+            rag = RAGSystem(self.vector_store, self.call_dashscope, redis_client=self.redis_client, llm_client=self.llm_client)
             self.logger.info("RAGSystem 初始化成功")
             return rag
         except Exception as e:
@@ -257,7 +257,7 @@ class IntegratedQASystem:
                 return self.bm25_search.search(query, threshold=0.85)
             except Exception as e:
                 self.logger.error(f"BM25 搜索失败: {e}")
-                return None, False
+                return None, True
         return None, True
 
     def _record_query_metrics(self, level, source, session_id, user_id,

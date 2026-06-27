@@ -373,7 +373,7 @@ async def delete_history(request: DeleteHistoryRequest, user: dict = Depends(req
         audit.log(AuditEventType.HISTORY_DELETED, user_id=user["user_id"],
                   tenant_id=user["tenant_id"],
                   detail={"session_ids": request.session_ids, "count": count})
-        return {"status": "success", "message": f"已删除 {len(request.session_ids)} 个会话的对话记录"}
+        return {"status": "success", "message": f"已删除 {count} 个会话的对话记录"}
     else:
         raise HTTPException(status_code=404, detail="未找到可删除的对话记录")
 
@@ -385,8 +385,17 @@ async def get_sources():
 
 # ========== Eval Endpoints ==========
 
+def _require_eval_admin(user: dict):
+    from repositories.user_repo import UserRepository
+    from db_models.base import SessionLocal
+    repo = UserRepository(SessionLocal)
+    if not repo.is_admin_user(user["user_id"]):
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+
 @app.post("/api/eval/run")
 async def eval_run(request: EvalRunRequest, user: dict = Depends(require_auth)):
+    _require_eval_admin(user)
     if qa_system.eval_service is None:
         return JSONResponse(
             status_code=503,
@@ -431,6 +440,7 @@ async def eval_list_runs(
     offset: int = Query(0, ge=0),
     user: dict = Depends(require_auth),
 ):
+    _require_eval_admin(user)
     if qa_system.eval_service is None:
         return JSONResponse(
             status_code=503,
@@ -468,6 +478,7 @@ async def eval_get_run(
     include_contexts: bool = Query(False),
     user: dict = Depends(require_auth),
 ):
+    _require_eval_admin(user)
     if qa_system.eval_service is None:
         return JSONResponse(
             status_code=503,
@@ -522,6 +533,7 @@ async def eval_trends(
     limit: int = Query(20, ge=1, le=100),
     user: dict = Depends(require_auth),
 ):
+    _require_eval_admin(user)
     if qa_system.eval_service is None:
         return JSONResponse(
             status_code=503,
@@ -533,6 +545,7 @@ async def eval_trends(
 
 @app.get("/api/eval/status")
 async def eval_status(user: dict = Depends(require_auth)):
+    _require_eval_admin(user)
     if qa_system.eval_service is None:
         return JSONResponse(
             status_code=503,
@@ -685,6 +698,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 user_id = payload["user_id"]
                 username = payload["username"]
                 tenant_id = payload.get("tenant_id", 0)
+            else:
+                await websocket.close(code=4001, reason="Token已失效")
+                return
+            # Rate limit for WebSocket (mirrors GatewayMiddleware Layer 3,
+            # which doesn't fire for WebSocket connections)
+            from gateway.rate_limiter import RateLimiter
+            limiter = RateLimiter()
+            if not limiter.check_stream_limit(user_id, tenant_id):
+                await websocket.close(code=4429, reason="请求过于频繁，请稍后再试")
+                return
         except Exception:
             await websocket.close(code=4001, reason="令牌无效或已过期")
             return

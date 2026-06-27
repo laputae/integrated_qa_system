@@ -83,10 +83,10 @@ class RulePreJudge:
 
 
 class StrategySelector:
-    def __init__(self, redis_client=None):
-        # 初始化 OpenAI 客户端
-        self.client = OpenAI(api_key=Config().DASHSCOPE_API_KEY,
-                             base_url=Config().DASHSCOPE_BASE_URL)
+    def __init__(self, redis_client=None, llm_client=None):
+        self.client = llm_client or OpenAI(
+            api_key=Config().DASHSCOPE_API_KEY,
+            base_url=Config().DASHSCOPE_BASE_URL)
         # 获取策略选择提示模板
         self.strategy_prompt_template = self._get_strategy_prompt()
         # 规则预判器

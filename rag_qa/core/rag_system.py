@@ -32,7 +32,7 @@ conf = Config()
 #   定义 RAGSystem 类，封装 RAG 系统的核心逻辑
 class RAGSystem:
     #   初始化方法，设置 RAG 系统的基本参数
-    def __init__(self, vector_store, llm, redis_client=None):
+    def __init__(self, vector_store, llm, redis_client=None, llm_client=None):
         #   设置向量数据库对象
         self.vector_store = vector_store
         #   设置大语言模型调用函数
@@ -43,7 +43,7 @@ class RAGSystem:
         classifier_path = os.path.join(rag_qa_path, 'core', 'bert_query_classifier')
         self.query_classifier = QueryClassifier(model_path=classifier_path)
         #   初始化策略选择器
-        self.strategy_selector = StrategySelector(redis_client=redis_client)
+        self.strategy_selector = StrategySelector(redis_client=redis_client, llm_client=llm_client)
         #   Redis 缓存客户端（用于缓存 LLM 生成的中间结果）
         self.redis_client = redis_client
         #   HallucinationGuard — 按需初始化
