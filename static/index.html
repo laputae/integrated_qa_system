@@ -995,6 +995,10 @@ async function sendMessage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query, source_filter: filter, session_id: currentSessionId })
         });
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.detail || `请求失败 (${resp.status})`);
+        }
         const data = await resp.json();
 
         if (typingIndicator.parentNode) chatHistory.removeChild(typingIndicator);
@@ -1009,7 +1013,7 @@ async function sendMessage() {
             chatHistory.appendChild(messageElement);
             await handleStreamingResponse(query, filter, contentElement);
         } else {
-            addMessage('system', data.answer);
+            addMessage('system', data.answer || '(空响应)');
         }
         await loadUserSessions();
     } catch (e) {

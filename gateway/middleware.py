@@ -82,13 +82,10 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                     # Skip SQL injection scan on query endpoints (they use
                     # parameterized queries — false positives on edu content)
                     if path in _SKIP_SQL_SCAN_PATHS:
-                        scan_ok, scan_error = SecurityFilter.detect_xss(
+                        xss_result = SecurityFilter.detect_xss(
                             body_bytes.decode("utf-8")
-                        ), None
-                        if scan_ok:
-                            scan_ok, scan_error = True, None
-                        else:
-                            scan_ok, scan_error = False, scan_ok
+                        )
+                        scan_ok, scan_error = (False, xss_result) if xss_result else (True, None)
                     else:
                         scan_ok, scan_error = SecurityFilter.scan(
                             body_bytes.decode("utf-8")
