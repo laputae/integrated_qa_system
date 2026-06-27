@@ -14,10 +14,36 @@ current_dir_path = os.path.dirname(current_file_path)
 project_root = os.path.dirname(current_dir_path)
 
 config_file_path = os.path.join(project_root, 'config.ini')
-# print(f'config_file_path--》{config_file_path}')
+
+_config_singleton = None
+
+
+def get_config():
+    global _config_singleton
+    if _config_singleton is None:
+        _config_singleton = Config()
+    return _config_singleton
+
+
+def reset_config():
+    """Reset the config singleton (for tests that need fresh config)."""
+    global _config_singleton
+    _config_singleton = None
+
 
 class Config():
+    _initialized = False
+
+    def __new__(cls, *args, **kwargs):
+        global _config_singleton
+        if _config_singleton is None:
+            _config_singleton = super().__new__(cls)
+        return _config_singleton
+
     def __init__(self, config_file=config_file_path):
+        if self._initialized:
+            return
+        self._initialized = True
         # config_file代表配置文件ini的路径
         # 1.创建配置文件解析器
         self.config = configparser.ConfigParser()

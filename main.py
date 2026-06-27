@@ -14,6 +14,7 @@ from openai import (
 import time
 import uuid
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 
 class IntegratedQASystem:
@@ -26,6 +27,7 @@ class IntegratedQASystem:
         from db_models.base import init_db, SessionLocal, Base, engine
         self.engine = engine
         self.SessionLocal = SessionLocal
+        self.executor = ThreadPoolExecutor(max_workers=self.config.THREAD_POOL_WORKERS)
 
         # ---- Phase 2: Optional components (graceful on failure) ----
         self.redis_client = self._init_redis()
@@ -128,6 +130,7 @@ class IntegratedQASystem:
                 rag_system=self.rag_system,
                 llm_client=self.llm_client,
                 vector_store=self.vector_store,
+                executor=self.executor,
             )
             self.logger.info("EvalService 初始化成功")
             return service
@@ -245,13 +248,40 @@ class IntegratedQASystem:
         repo = self._get_conversation_repo()
         return repo.soft_delete_sessions([session_id], user_id, tenant_id) > 0
 
+    # ========== Shared Pipeline Helpers ==========
+
+    def _bm25_phase(self, query) -> tuple:
+        """Run BM25 search. Returns (answer, need_rag)."""
+        if self.bm25_search:
+            try:
+                return self.bm25_search.search(query, threshold=0.85)
+            except Exception as e:
+                self.logger.error(f"BM25 搜索失败: {e}")
+                return None, False
+        return None, True
+
+    def _record_query_metrics(self, level, source, session_id, user_id,
+                              tenant_id, query, answer, start_time):
+        """Record Prometheus metrics and update session history."""
+        if session_id and answer:
+            self.update_session_history(session_id, user_id, tenant_id, query, answer)
+        processing_time = time.time() - start_time
+        src = source or "all"
+        qa_query_total.labels(degradation_level=level.name, source=src).inc()
+        qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
+        self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
+
+    def _yield_not_found(self, level, source_filter, start_time, msg="未找到答案"):
+        """Yield a not-found result with metrics recorded."""
+        self.logger.info(msg if msg != "未找到答案" else "未找到答案")
+        self._record_query_metrics(level, source_filter, None, 0, 0, "", None, start_time)  # no session needed
+        return msg
+
     # ========== Main Query Pipeline ==========
 
     def query(self, query, user_id: int = 0, tenant_id: int = 0,
               source_filter=None, session_id=None, external_context=None):
         start_time = time.time()
-
-        # --- Degradation check ---
         level = self.health.get_degradation_level()
         self.logger.info(
             f"处理查询: '{query}' (降级等级: {level.name}, "
@@ -265,96 +295,49 @@ class IntegratedQASystem:
 
         history = self.get_session_history(session_id, user_id, tenant_id) if session_id else []
 
-        # --- Phase 1: BM25 search ---
-        answer = None
-        need_rag = False
-        if self.bm25_search:
-            try:
-                answer, need_rag = self.bm25_search.search(query, threshold=0.85)
-            except Exception as e:
-                self.logger.error(f"BM25 搜索失败: {e}")
-                answer, need_rag = None, False
-        else:
-            # No BM25 at all — go straight to RAG if available
-            need_rag = True
-
+        # Phase 1: BM25
+        answer, need_rag = self._bm25_phase(query)
         if answer:
             self.logger.info(f"MySQL答案: {answer}")
-            if session_id:
-                self.update_session_history(session_id, user_id, tenant_id, query, answer)
             qa_bm25_hit_total.inc()
-            processing_time = time.time() - start_time
-            source = source_filter or "all"
-            qa_query_total.labels(degradation_level=level.name, source=source).inc()
-            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
-            self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
+            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, answer, start_time)
             yield answer, True
             return
 
-        # --- Phase 2: BM25 missed. Try RAG if available ---
-        if need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS:
-            if level == DegradationLevel.LEVEL3_NO_LLM:
-                self.logger.info("LLM 降级中，返回检索到的原始上下文")
-                collected_answer = self._degraded_rag_retrieve(query, source_filter)
-                processing_time = time.time() - start_time
-                source = source_filter or "all"
-                qa_query_total.labels(degradation_level=level.name, source=source).inc()
-                qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
-                yield collected_answer, True
-                return
+        # Phase 2: RAG fallback
+        if not (need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS):
+            msg = self._yield_not_found(level, source_filter, start_time,
+                                        f"RAG 不可用 (降级等级: {level.name})" if level >= DegradationLevel.LEVEL2_NO_MILVUS else "未找到答案")
+            yield msg, True
+            return
 
-            # Full RAG pipeline (Level 0 or 1)
-            self.logger.info("无可靠MySQL答案，回退到RAG")
-            collected_answer = ""
-            for token in self.rag_system.generate_answer(
-                query, source_filter=source_filter, history=history,
-                external_context=external_context
-            ):
-                collected_answer += token
-                yield token, False
-            # 读取 HallucinationGuard 最近一次检测结果
-            self._last_guard_result = getattr(
-                self.rag_system, '_last_guard_result', None
-            )
-            if session_id:
-                self.update_session_history(session_id, user_id, tenant_id, query, collected_answer)
-            processing_time = time.time() - start_time
-            source = source_filter or "all"
-            qa_query_total.labels(degradation_level=level.name, source=source).inc()
-            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
-            self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
-            yield "", True
-        elif need_rag and level >= DegradationLevel.LEVEL2_NO_MILVUS:
-            self.logger.info(f"RAG 不可用 (降级等级: {level.name})")
-            processing_time = time.time() - start_time
-            source = source_filter or "all"
-            qa_query_total.labels(degradation_level=level.name, source=source).inc()
-            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
-            self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
-            yield "未找到答案", True
-        else:
-            self.logger.info("未找到答案")
-            processing_time = time.time() - start_time
-            source = source_filter or "all"
-            qa_query_total.labels(degradation_level=level.name, source=source).inc()
-            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
-            self.logger.info(f"查询处理耗时 {processing_time:.2f}秒")
-            yield "未找到答案", True
+        if level == DegradationLevel.LEVEL3_NO_LLM:
+            self.logger.info("LLM 降级中，返回检索到的原始上下文")
+            collected_answer = self._degraded_rag_retrieve(query, source_filter)
+            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time)
+            yield collected_answer, True
+            return
+
+        # Full RAG pipeline
+        self.logger.info("无可靠MySQL答案，回退到RAG")
+        collected_answer = ""
+        for token in self.rag_system.generate_answer(
+            query, source_filter=source_filter, history=history,
+            external_context=external_context
+        ):
+            collected_answer += token
+            yield token, False
+        self._last_guard_result = getattr(self.rag_system, '_last_guard_result', None)
+        self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time)
+        yield "", True
 
     # ========== Async Query Pipeline (asyncio.Semaphore + to_thread) ==========
 
     async def aquery(self, query, semaphore: asyncio.Semaphore,
                      user_id: int = 0, tenant_id: int = 0,
                      source_filter=None, session_id=None, external_context=None):
-        """Async variant of query() for high-concurrency WebSocket/SSE endpoints.
-
-        - BM25 phase runs inline (fast, non-blocking).
-        - Degraded RAG (Level 3, no LLM) runs via asyncio.to_thread.
-        - Full RAG acquires semaphore, then streams tokens from a sync thread
-          through an asyncio.Queue so the event loop stays free.
-        """
+        """Async variant of query() for high-concurrency WebSocket/SSE endpoints."""
         start_time = time.time()
-
         level = self.health.get_degradation_level()
         self.logger.info(
             f"[async] 处理查询: '{query}' (降级等级: {level.name}, "
@@ -368,106 +351,72 @@ class IntegratedQASystem:
 
         history = self.get_session_history(session_id, user_id, tenant_id) if session_id else []
 
-        # --- Phase 1: BM25 (inline — lightweight) ---
-        answer = None
-        need_rag = False
-        if self.bm25_search:
-            try:
-                answer, need_rag = self.bm25_search.search(query, threshold=0.85)
-            except Exception as e:
-                self.logger.error(f"[async] BM25 搜索失败: {e}")
-                answer, need_rag = None, False
-        else:
-            need_rag = True
-
+        # Phase 1: BM25 (inline)
+        answer, need_rag = self._bm25_phase(query)
         if answer:
             self.logger.info(f"[async] MySQL答案: {answer}")
-            if session_id:
-                self.update_session_history(session_id, user_id, tenant_id, query, answer)
             qa_bm25_hit_total.inc()
-            processing_time = time.time() - start_time
-            source = source_filter or "all"
-            qa_query_total.labels(degradation_level=level.name, source=source).inc()
-            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
+            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, answer, start_time)
             yield answer, True
             return
 
-        # --- Phase 2: RAG (offload to thread) ---
-        if need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS:
-            if level == DegradationLevel.LEVEL3_NO_LLM:
-                self.logger.info("[async] LLM 降级中，返回检索到的原始上下文")
-                loop = asyncio.get_running_loop()
-                collected_answer = await loop.run_in_executor(
-                    None, self._degraded_rag_retrieve, query, source_filter
-                )
-                processing_time = time.time() - start_time
-                source = source_filter or "all"
-                qa_query_total.labels(degradation_level=level.name, source=source).inc()
-                qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
-                yield collected_answer, True
-                return
+        # Phase 2: RAG (offload to thread)
+        if not (need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS):
+            msg = self._yield_not_found(level, source_filter, start_time,
+                                        f"RAG 不可用 (降级等级: {level.name})" if level >= DegradationLevel.LEVEL2_NO_MILVUS else "未找到答案")
+            yield msg, True
+            return
 
-            # Full RAG pipeline — acquire semaphore, then stream via Queue
-            self.logger.info("[async] 无可靠MySQL答案，回退到RAG (async path)")
-            queue: asyncio.Queue = asyncio.Queue()
+        if level == DegradationLevel.LEVEL3_NO_LLM:
+            self.logger.info("[async] LLM 降级中，返回检索到的原始上下文")
+            loop = asyncio.get_running_loop()
+            collected_answer = await loop.run_in_executor(
+                self.executor, self._degraded_rag_retrieve, query, source_filter
+            )
+            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time)
+            yield collected_answer, True
+            return
 
-            async with semaphore:
-                def _run_rag():
-                    try:
-                        collected = ""
-                        for token in self.rag_system.generate_answer(
-                            query, source_filter=source_filter, history=history,
-                            external_context=external_context
-                        ):
-                            collected += token
-                            queue.put_nowait(("token", token))
-                        self._last_guard_result = getattr(
-                            self.rag_system, '_last_guard_result', None
-                        )
-                        queue.put_nowait(("done", collected))
-                    except Exception as e:
-                        self.logger.error(f"[async] RAG 线程异常: {e}")
-                        queue.put_nowait(("error", str(e)))
+        # Full RAG pipeline — stream via Queue from thread pool
+        self.logger.info("[async] 无可靠MySQL答案，回退到RAG (async path)")
+        queue: asyncio.Queue = asyncio.Queue()
 
-                loop = asyncio.get_running_loop()
-                loop.run_in_executor(None, _run_rag)
+        async with semaphore:
+            def _run_rag():
+                try:
+                    collected = ""
+                    for token in self.rag_system.generate_answer(
+                        query, source_filter=source_filter, history=history,
+                        external_context=external_context
+                    ):
+                        collected += token
+                        queue.put_nowait(("token", token))
+                    self._last_guard_result = getattr(
+                        self.rag_system, '_last_guard_result', None
+                    )
+                    queue.put_nowait(("done", collected))
+                except Exception as e:
+                    self.logger.error(f"[async] RAG 线程异常: {e}")
+                    queue.put_nowait(("error", str(e)))
 
-                collected_answer = ""
-                while True:
-                    msg_type, data = await queue.get()
-                    if msg_type == "token":
-                        collected_answer += data
-                        yield data, False
-                    elif msg_type == "done":
-                        collected_answer = data  # final collected string
-                        break
-                    elif msg_type == "error":
-                        yield f"抱歉，处理问题时出错，请联系人工客服：{self.config.CUSTOMER_SERVICE_PHONE}", True
-                        return
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(self.executor, _run_rag)
 
-            if session_id:
-                self.update_session_history(session_id, user_id, tenant_id, query, collected_answer)
-            processing_time = time.time() - start_time
-            source = source_filter or "all"
-            qa_query_total.labels(degradation_level=level.name, source=source).inc()
-            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
-            self.logger.info(f"[async] 查询处理耗时 {processing_time:.2f}秒")
-            yield "", True
+            collected_answer = ""
+            while True:
+                msg_type, data = await queue.get()
+                if msg_type == "token":
+                    collected_answer += data
+                    yield data, False
+                elif msg_type == "done":
+                    collected_answer = data
+                    break
+                elif msg_type == "error":
+                    yield f"抱歉，处理问题时出错，请联系人工客服：{self.config.CUSTOMER_SERVICE_PHONE}", True
+                    return
 
-        elif need_rag and level >= DegradationLevel.LEVEL2_NO_MILVUS:
-            self.logger.info(f"[async] RAG 不可用 (降级等级: {level.name})")
-            processing_time = time.time() - start_time
-            source = source_filter or "all"
-            qa_query_total.labels(degradation_level=level.name, source=source).inc()
-            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
-            yield "未找到答案", True
-        else:
-            self.logger.info("[async] 未找到答案")
-            processing_time = time.time() - start_time
-            source = source_filter or "all"
-            qa_query_total.labels(degradation_level=level.name, source=source).inc()
-            qa_query_latency_seconds.labels(degradation_level=level.name).observe(processing_time)
-            yield "未找到答案", True
+        self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time)
+        yield "", True
 
     def _degraded_rag_retrieve(self, query, source_filter=None) -> str:
         """Level 3 degraded retrieval: return raw context without LLM summarization."""

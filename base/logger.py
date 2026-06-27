@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from contextlib import contextmanager
 from typing import Optional
 
-from config import Config
+from base.config import Config
 
 # ---- Request context (contextvars — async-safe) ----
 
@@ -94,25 +94,36 @@ _project_root = os.path.dirname(_current_dir_path)
 
 
 def setup_logging(log_file=None):
-    config = Config()
-    log_file = log_file or os.path.join(_project_root, config.LOG_FILE)
+    try:
+        config = Config()
+    except Exception:
+        config = None
+
+    log_file = log_file or os.path.join(
+        _project_root,
+        config.LOG_FILE if config else "logs/app.log",
+    )
+    log_level = config.LOG_LEVEL if config else "INFO"
+    log_format = config.LOG_FORMAT if config else "json"
+    log_max_bytes = config.LOG_MAX_BYTES if config else 10485760
+    log_backup_count = config.LOG_BACKUP_COUNT if config else 5
 
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
     logger = logging.getLogger("EduRAG")
-    level = getattr(logging, config.LOG_LEVEL.upper(), logging.INFO)
+    level = getattr(logging, log_level.upper(), logging.INFO)
     logger.setLevel(level)
 
     if not logger.handlers:
         # File handler — JSON, with rotation
         file_handler = logging.handlers.RotatingFileHandler(
             log_file,
-            maxBytes=config.LOG_MAX_BYTES,
-            backupCount=config.LOG_BACKUP_COUNT,
+            maxBytes=log_max_bytes,
+            backupCount=log_backup_count,
             encoding='utf-8',
         )
         file_handler.setLevel(level)
-        if config.LOG_FORMAT == 'json':
+        if log_format == 'json':
             file_handler.setFormatter(JsonFormatter())
         else:
             file_handler.setFormatter(logging.Formatter(

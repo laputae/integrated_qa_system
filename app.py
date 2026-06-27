@@ -393,30 +393,35 @@ async def eval_run(request: EvalRunRequest, user: dict = Depends(require_auth)):
             content={"detail": "评估服务未初始化，无法执行评估"},
         )
 
+    # Create the run record synchronously before launching background work
+    chunk_snapshot = None
+    try:
+        from base.chunk_config import ChunkConfigManager
+        chunk_snapshot = ChunkConfigManager().get_config()
+    except Exception:
+        pass
+    run = qa_system.eval_service.repo.create_run(
+        triggered_by=request.triggered_by,
+        chunk_config_snapshot=chunk_snapshot,
+    )
+
     async def run_background():
         await qa_system.eval_service.run_evaluation_async(
             dataset=request.dataset,
             triggered_by=request.triggered_by,
+            run_id=run.id,
         )
 
     asyncio.create_task(run_background())
 
-    # Get the most recent run (the one just created)
-    latest = qa_system.eval_service.repo.get_runs(limit=1, offset=0)
-    if latest:
-        run = latest[0]
-        return JSONResponse(
-            status_code=202,
-            content={
-                "run_id": run.id,
-                "status": run.status,
-                "started_at": run.started_at.isoformat() if run.started_at else None,
-                "message": f"评估已启动，请使用 GET /api/eval/runs/{run.id} 查询结果",
-            },
-        )
     return JSONResponse(
         status_code=202,
-        content={"message": "评估已启动"},
+        content={
+            "run_id": run.id,
+            "status": run.status,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "message": f"评估已启动，请使用 GET /api/eval/runs/{run.id} 查询结果",
+        },
     )
 
 
@@ -527,7 +532,7 @@ async def eval_trends(
 
 
 @app.get("/api/eval/status")
-async def eval_status(user: dict = Depends(get_current_user)):
+async def eval_status(user: dict = Depends(require_auth)):
     if qa_system.eval_service is None:
         return JSONResponse(
             status_code=503,

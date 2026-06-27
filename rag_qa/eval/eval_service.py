@@ -9,12 +9,14 @@ from base import logger, Config
 class EvalService:
     """Evaluation automation pipeline + continuous quality monitoring."""
 
-    def __init__(self, config: Config, repo, rag_system, llm_client, vector_store):
+    def __init__(self, config: Config, repo, rag_system, llm_client, vector_store,
+                 executor=None):
         self.config = config
         self.repo = repo
         self.rag_system = rag_system
         self.llm_client = llm_client
         self.vector_store = vector_store
+        self.executor = executor
         self.logger = logger
         self._eval_task = None
         self._running = False
@@ -25,7 +27,8 @@ class EvalService:
 
     def run_evaluation(self, dataset: list | None = None,
                        triggered_by: str = "manual",
-                       chunk_config_snapshot: dict | None = None) -> dict:
+                       chunk_config_snapshot: dict | None = None,
+                       run_id: int | None = None) -> dict:
         """Run a full RAGAS evaluation synchronously (call via asyncio.to_thread)."""
         start_time = time.time()
 
@@ -38,11 +41,15 @@ class EvalService:
         if not dataset:
             return {"error": "评估数据集为空"}
 
-        # 2. Create run record
-        run = self.repo.create_run(
-            triggered_by=triggered_by,
-            chunk_config_snapshot=chunk_config_snapshot,
-        )
+        # 2. Create or reuse run record
+        run = None
+        if run_id is not None:
+            run = self.repo.get_run(run_id)
+        if run is None:
+            run = self.repo.create_run(
+                triggered_by=triggered_by,
+                chunk_config_snapshot=chunk_config_snapshot,
+            )
         run_id = run.id
         self.logger.info(f"[Eval] 开始评估 run_id={run_id}, 问题数={len(dataset)}, 触发方式={triggered_by}")
 
@@ -129,11 +136,12 @@ class EvalService:
 
     async def run_evaluation_async(self, dataset: list | None = None,
                                    triggered_by: str = "manual",
-                                   chunk_config_snapshot: dict | None = None) -> dict:
+                                   chunk_config_snapshot: dict | None = None,
+                                   run_id: int | None = None) -> dict:
         """Async wrapper for run_evaluation."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None, self.run_evaluation, dataset, triggered_by, chunk_config_snapshot,
+            self.executor, self.run_evaluation, dataset, triggered_by, chunk_config_snapshot, run_id,
         )
 
     def get_quality_status(self) -> dict:
@@ -439,8 +447,10 @@ class EvalService:
         if len(values) < 2:
             return "stable"
 
-        recent_avg = sum(values[:3]) / min(3, len(values))
-        older_avg = sum(values[-3:]) / min(3, len(values))
+        recent_slice = values[:3]
+        older_slice = values[-3:]
+        recent_avg = sum(recent_slice) / len(recent_slice)
+        older_avg = sum(older_slice) / len(older_slice)
         diff = recent_avg - older_avg
 
         if diff > 0.05:

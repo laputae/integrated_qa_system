@@ -25,6 +25,17 @@ AUTH_WHITELIST = {
     "/api/sources",
 }
 
+# Paths that should skip SQL injection scanning (parameterized queries only)
+_SKIP_SQL_SCAN_PATHS = {"/api/query", "/api/stream"}
+
+
+def _get_client_ip(request: Request) -> str:
+    """Resolve client IP, respecting X-Forwarded-For for reverse proxy setups."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
 
 def _is_whitelisted(path: str) -> bool:
     if path in AUTH_WHITELIST:
@@ -54,7 +65,7 @@ class GatewayMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = _get_client_ip(request)
         user_agent = request.headers.get("User-Agent", "unknown")
         audit = get_audit_logger()
 
@@ -68,8 +79,20 @@ class GatewayMiddleware(BaseHTTPMiddleware):
             if request.method in ("POST", "PUT", "PATCH"):
                 try:
                     body_bytes = await request.body()
-                    body_text = body_bytes.decode("utf-8")
-                    scan_ok, scan_error = SecurityFilter.scan(body_text)
+                    # Skip SQL injection scan on query endpoints (they use
+                    # parameterized queries — false positives on edu content)
+                    if path in _SKIP_SQL_SCAN_PATHS:
+                        scan_ok, scan_error = SecurityFilter.detect_xss(
+                            body_bytes.decode("utf-8")
+                        ), None
+                        if scan_ok:
+                            scan_ok, scan_error = True, None
+                        else:
+                            scan_ok, scan_error = False, scan_ok
+                    else:
+                        scan_ok, scan_error = SecurityFilter.scan(
+                            body_bytes.decode("utf-8")
+                        )
                     if not scan_ok:
                         detail = {"path": path, "reason": scan_error, "ip": client_ip}
                         audit.log(AuditEventType.SQL_INJECTION_ATTEMPT if "SQL" in str(scan_error)
@@ -90,8 +113,8 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                         scope={**request.scope, "headers": request.scope.get("headers", [])},
                         receive=receive,
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"请求体重构失败 ({path}): {e}")
 
         # ---- Layer 1.5: /metrics Basic Auth (if configured) ----
         if path == "/metrics":
