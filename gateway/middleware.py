@@ -38,6 +38,13 @@ class GatewayMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
         self._rate_limiter: Optional[RateLimiter] = None
+        self._metrics_auth_user: Optional[str] = None
+        self._metrics_auth_password: Optional[str] = None
+
+    @staticmethod
+    def _get_config():
+        from base.config import Config
+        return Config()
 
     @property
     def rate_limiter(self) -> RateLimiter:
@@ -85,6 +92,35 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                     )
                 except Exception:
                     pass
+
+        # ---- Layer 1.5: /metrics Basic Auth (if configured) ----
+        if path == "/metrics":
+            metrics_auth_user = getattr(self, "_metrics_auth_user", None)
+            if metrics_auth_user is None:
+                config = self._get_config()
+                metrics_auth_user = config.METRICS_AUTH_USER
+                self._metrics_auth_user = metrics_auth_user
+                self._metrics_auth_password = config.METRICS_AUTH_PASSWORD
+            if self._metrics_auth_user and self._metrics_auth_password:
+                import base64
+                auth_header = request.headers.get("Authorization", "")
+                if not auth_header.startswith("Basic "):
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "未提供认证信息"},
+                        headers={"WWW-Authenticate": "Basic realm=\"metrics\""},
+                    )
+                try:
+                    credentials = base64.b64decode(auth_header[6:]).decode("utf-8")
+                    username, password = credentials.split(":", 1)
+                    if username != self._metrics_auth_user or password != self._metrics_auth_password:
+                        raise ValueError
+                except Exception:
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "认证信息无效"},
+                        headers={"WWW-Authenticate": "Basic realm=\"metrics\""},
+                    )
 
         # ---- Layer 2: RateLimiter (all requests) ----
         if path.startswith("/api/"):

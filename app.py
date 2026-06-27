@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, HTTPException, Query, Depends
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
@@ -15,9 +18,11 @@ import re
 
 from main import IntegratedQASystem
 from base import logger
+from base.settings import validate_config
 from base.health import DegradationLevel
 from prometheus_fastapi_instrumentator import Instrumentator
 from gateway.middleware import GatewayMiddleware
+from gateway.security_headers import SecurityHeadersMiddleware
 from gateway.auth import (
     create_access_token,
     create_refresh_token,
@@ -39,6 +44,10 @@ from mysql_qa import RedisClient
 
 qa_system = IntegratedQASystem()
 
+# GAP-14: Fail-fast config validation at startup
+validate_config()
+logger.info("Config validation passed — all required settings present.")
+
 # asyncio.Semaphore for concurrency control — limits simultaneous LLM calls
 _llm_semaphore = asyncio.Semaphore(qa_system.config.MAX_CONCURRENT_LLM_CALLS)
 
@@ -58,9 +67,12 @@ app = FastAPI(title="问答系统API", description="集成MySQL和RAG的智能�
 
 app.add_middleware(GatewayMiddleware)
 
+if qa_system.config.SECURE_HEADERS_ENABLED:
+    app.add_middleware(SecurityHeadersMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=qa_system.config.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

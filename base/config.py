@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 # 导入配置ini文件的解析库
 import configparser
+import json
 # 导入路径操作
 import os
 # 获取当前文件的绝对路径
@@ -118,9 +119,23 @@ class Config():
         self.EMBEDDING_CHECKPOINT_DIR = self.config.get('embedding', 'checkpoint_dir', fallback='checkpoints/embedding')
         self.EMBEDDING_CACHE_TTL = self.config.getint('embedding', 'cache_ttl', fallback=86400)
 
+        # /metrics 端点认证配置
+        self.METRICS_AUTH_USER = os.environ.get("METRICS_AUTH_USER") or self.config.get('metrics', 'metrics_auth_user', fallback='')
+        self.METRICS_AUTH_PASSWORD = os.environ.get("METRICS_AUTH_PASSWORD") or self.config.get('metrics', 'metrics_auth_password', fallback='')
+
+        # 安全响应头配置
+        self.SECURE_HEADERS_ENABLED = os.environ.get("SECURE_HEADERS_ENABLED", "").lower() in ("1", "true", "yes") \
+            or self.config.getboolean('security_headers', 'enabled', fallback=True)
+
         # 应用配置
         self.CUSTOMER_SERVICE_PHONE = os.environ.get("CUSTOMER_SERVICE_PHONE") or self.config.get('app', 'customer_service_phone', fallback='')
-        self.VALID_SOURCES = eval(self.config.get('app', 'valid_sources', fallback=["ai", "java", "test", "ops", "bigdata"]))
+        cors_origins_raw = os.environ.get("CORS_ORIGINS") or self.config.get('app', 'cors_origins', fallback='http://localhost:3000,http://127.0.0.1:8000')
+        self.CORS_ORIGINS = [o.strip() for o in cors_origins_raw.split(',') if o.strip()]
+        valid_sources_raw = self.config.get('app', 'valid_sources', fallback='["ai", "java", "test", "ops", "bigdata"]')
+        try:
+            self.VALID_SOURCES = json.loads(valid_sources_raw)
+        except json.JSONDecodeError:
+            self.VALID_SOURCES = ["ai", "java", "test", "ops", "bigdata"]
         # 日志配置
         self.LOG_FILE = os.environ.get("LOG_FILE") or self.config.get('logger', 'log_file', fallback='logs/app.log')
         self.LOG_LEVEL = os.environ.get("LOG_LEVEL") or self.config.get('logger', 'log_level', fallback='INFO')

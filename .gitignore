@@ -30,6 +30,7 @@ __pycache__/
 Thumbs.db
 
 # ========== 敏感配置文件（仅本地配置）==========
+.env
 .env.local
 .claude/
 CLAUDE.md
