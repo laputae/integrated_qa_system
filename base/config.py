@@ -26,37 +26,23 @@ class Config():
             self.config.read_file(fp)
         # 3. 获取相关的配置
         # 3.1 获取Mysql数据库的配置
-        # mysql的主机地址
-        # self.MYSQL_HOST = self.config["mysql"]["host1"]
-        # fallback如果键不存在，这就是充当默认值
-        self.MYSQL_HOST = self.config.get('mysql', 'host', fallback='localhost')
-        # MySQL 用户名
-        self.MYSQL_USER = self.config.get('mysql', 'user', fallback='root')
-        # MySQL 密码
-        self.MYSQL_PASSWORD = self.config.get('mysql', 'password', fallback='123456')
-        # MySQL 数据库名
-        self.MYSQL_DATABASE = self.config.get('mysql', 'database', fallback='subjects_kg')
+        self.MYSQL_HOST = os.environ.get("MYSQL_HOST") or self.config.get('mysql', 'host', fallback='localhost')
+        self.MYSQL_USER = os.environ.get("MYSQL_USER") or self.config.get('mysql', 'user', fallback='root')
+        self.MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD") or self.config.get('mysql', 'password', fallback='')
+        self.MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE") or self.config.get('mysql', 'database', fallback='subjects_kg')
 
         # Redis 配置
-        # Redis 主机地址
-        self.REDIS_HOST = self.config.get('redis', 'host', fallback='localhost')
-        # Redis 端口
-        self.REDIS_PORT = self.config.getint('redis', 'port', fallback=6379)
-        # Redis 密码
-        self.REDIS_PASSWORD = self.config.get('redis', 'password', fallback='1234')
-        # Redis 数据库编号
-        self.REDIS_DB = self.config.getint('redis', 'db', fallback=0)
+        self.REDIS_HOST = os.environ.get("REDIS_HOST") or self.config.get('redis', 'host', fallback='localhost')
+        self.REDIS_PORT = int(os.environ.get("REDIS_PORT") or self.config.get('redis', 'port', fallback='6379'))
+        self.REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD") or self.config.get('redis', 'password', fallback='')
+        self.REDIS_DB = int(os.environ.get("REDIS_DB") or self.config.get('redis', 'db', fallback='0'))
 
         # Milvus 配置
-        # Milvus 主机地址
-        self.MILVUS_HOST = self.config.get('milvus', 'host', fallback='localhost')
-        # Milvus 端口
-        self.MILVUS_PORT = self.config.get('milvus', 'port', fallback='19530')
-        # Milvus 数据库名
-        self.MILVUS_DATABASE_NAME = self.config.get('milvus', 'database_name', fallback='itcast')
-        # Milvus 集合名
-        self.MILVUS_COLLECTION_NAME = self.config.get('milvus', 'collection_name', fallback='edurag_final')
-        self.MILVUS_TIMEOUT = self.config.getint('milvus', 'timeout', fallback=10)
+        self.MILVUS_HOST = os.environ.get("MILVUS_HOST") or self.config.get('milvus', 'host', fallback='localhost')
+        self.MILVUS_PORT = os.environ.get("MILVUS_PORT") or self.config.get('milvus', 'port', fallback='19530')
+        self.MILVUS_DATABASE_NAME = os.environ.get("MILVUS_DATABASE_NAME") or self.config.get('milvus', 'database_name', fallback='itcast')
+        self.MILVUS_COLLECTION_NAME = os.environ.get("MILVUS_COLLECTION_NAME") or self.config.get('milvus', 'collection_name', fallback='edurag_final')
+        self.MILVUS_TIMEOUT = int(os.environ.get("MILVUS_TIMEOUT") or self.config.get('milvus', 'timeout', fallback='10'))
 
         # LLM 配置
         # LLM 模型名
@@ -82,15 +68,16 @@ class Config():
         # 块重叠大小
         self.CHUNK_OVERLAP = self.config.getint('retrieval', 'chunk_overlap', fallback=50)
         # 检索返回数量
-        self.RETRIEVAL_K = self.config.getint('retrieval', 'retrieval_k', fallback=5)
+        self.RETRIEVAL_K = int(os.environ.get("RETRIEVAL_K") or self.config.get('retrieval', 'retrieval_k', fallback='5'))
         # 最终候选数量
         self.CANDIDATE_M = self.config.getint('retrieval', 'candidate_m', fallback=2)
         # 子查询并行检索最大线程数
         self.RETRIEVAL_MAX_WORKERS = self.config.getint('retrieval', 'max_workers', fallback=3)
 
         # Reranker 分数阈值（低于该分数的文档将被过滤）
-        self.RERANKER_SCORE_THRESHOLD = self.config.getfloat(
-            'retrieval', 'reranker_score_threshold', fallback=0.3
+        self.RERANKER_SCORE_THRESHOLD = float(
+            os.environ.get("RERANKER_SCORE_THRESHOLD")
+            or self.config.get('retrieval', 'reranker_score_threshold', fallback='0.3')
         )
 
         # LLM Reranker 配置
@@ -132,12 +119,12 @@ class Config():
         self.EMBEDDING_CACHE_TTL = self.config.getint('embedding', 'cache_ttl', fallback=86400)
 
         # 应用配置
-        self.CUSTOMER_SERVICE_PHONE = self.config.get('app', 'customer_service_phone')
+        self.CUSTOMER_SERVICE_PHONE = os.environ.get("CUSTOMER_SERVICE_PHONE") or self.config.get('app', 'customer_service_phone', fallback='')
         self.VALID_SOURCES = eval(self.config.get('app', 'valid_sources', fallback=["ai", "java", "test", "ops", "bigdata"]))
         # 日志配置
-        self.LOG_FILE = self.config.get('logger', 'log_file', fallback='logs/app.log')
-        self.LOG_LEVEL = self.config.get('logger', 'log_level', fallback='INFO')
-        self.LOG_FORMAT = self.config.get('logger', 'log_format', fallback='json')
+        self.LOG_FILE = os.environ.get("LOG_FILE") or self.config.get('logger', 'log_file', fallback='logs/app.log')
+        self.LOG_LEVEL = os.environ.get("LOG_LEVEL") or self.config.get('logger', 'log_level', fallback='INFO')
+        self.LOG_FORMAT = os.environ.get("LOG_FORMAT") or self.config.get('logger', 'log_format', fallback='json')
         self.LOG_MAX_BYTES = self.config.getint('logger', 'log_max_bytes', fallback=10485760)
         self.LOG_BACKUP_COUNT = self.config.getint('logger', 'log_backup_count', fallback=5)
 
@@ -145,14 +132,17 @@ class Config():
         self.JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or self.config.get(
             'auth', 'jwt_secret_key', fallback=''
         )
-        self.ACCESS_TOKEN_EXPIRE_MINUTES = self.config.getint(
-            'auth', 'access_token_expire_minutes', fallback=30
+        self.ACCESS_TOKEN_EXPIRE_MINUTES = int(
+            os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES")
+            or self.config.get('auth', 'access_token_expire_minutes', fallback='30')
         )
-        self.REFRESH_TOKEN_EXPIRE_DAYS = self.config.getint(
-            'auth', 'refresh_token_expire_days', fallback=7
+        self.REFRESH_TOKEN_EXPIRE_DAYS = int(
+            os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS")
+            or self.config.get('auth', 'refresh_token_expire_days', fallback='7')
         )
-        self.BCRYPT_COST_FACTOR = self.config.getint(
-            'auth', 'bcrypt_cost_factor', fallback=12
+        self.BCRYPT_COST_FACTOR = int(
+            os.environ.get("BCRYPT_COST_FACTOR")
+            or self.config.get('auth', 'bcrypt_cost_factor', fallback='12')
         )
 
         # Tenant 配置
@@ -161,10 +151,10 @@ class Config():
         )
 
         # Eval 配置
-        self.EVAL_LLM_MODEL = self.config.get('eval', 'eval_llm_model', fallback='') or None
-        self.EVAL_LLM_BASE_URL = self.config.get('eval', 'eval_llm_base_url', fallback='') or None
-        self.EVAL_EMBEDDING_MODEL = self.config.get('eval', 'eval_embedding_model', fallback='mxbai-embed-large')
-        self.EVAL_EMBEDDING_BASE_URL = self.config.get('eval', 'eval_embedding_base_url', fallback='http://localhost:11434')
+        self.EVAL_LLM_MODEL = os.environ.get("EVAL_LLM_MODEL") or self.config.get('eval', 'eval_llm_model', fallback='') or None
+        self.EVAL_LLM_BASE_URL = os.environ.get("EVAL_LLM_BASE_URL") or self.config.get('eval', 'eval_llm_base_url', fallback='') or None
+        self.EVAL_EMBEDDING_MODEL = os.environ.get("EVAL_EMBEDDING_MODEL") or self.config.get('eval', 'eval_embedding_model', fallback='mxbai-embed-large')
+        self.EVAL_EMBEDDING_BASE_URL = os.environ.get("EVAL_EMBEDDING_BASE_URL") or self.config.get('eval', 'eval_embedding_base_url', fallback='http://localhost:11434')
         self.EVAL_INTERVAL_SECONDS = self.config.getint('eval', 'eval_interval_seconds', fallback=86400)
         self.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD = self.config.getfloat('eval', 'regression_faithfulness_threshold', fallback=0.6)
         self.EVAL_REGRESSION_CONSECUTIVE_RUNS = self.config.getint('eval', 'regression_consecutive_runs', fallback=3)
@@ -173,8 +163,9 @@ class Config():
         self.EVAL_DEFAULT_DATASET_PATH = self.config.get('eval', 'default_dataset_path', fallback='rag_qa/rag_assesment/rag_evaluate_data.json')
 
         # Health check 配置
-        self.HEALTH_CHECK_TIMEOUT = self.config.getfloat(
-            'health', 'check_timeout', fallback=5.0
+        self.HEALTH_CHECK_TIMEOUT = float(
+            os.environ.get("HEALTH_CHECK_TIMEOUT")
+            or self.config.get('health', 'check_timeout', fallback='5.0')
         )
         self.HEALTH_CACHE_TTL = self.config.getint(
             'health', 'cache_ttl', fallback=30
@@ -204,11 +195,13 @@ class Config():
         )
 
         # 并发控制配置
-        self.MAX_CONCURRENT_LLM_CALLS = self.config.getint(
-            'concurrency', 'max_concurrent_llm_calls', fallback=10
+        self.MAX_CONCURRENT_LLM_CALLS = int(
+            os.environ.get("MAX_CONCURRENT_LLM_CALLS")
+            or self.config.get('concurrency', 'max_concurrent_llm_calls', fallback='10')
         )
-        self.THREAD_POOL_WORKERS = self.config.getint(
-            'concurrency', 'thread_pool_workers', fallback=20
+        self.THREAD_POOL_WORKERS = int(
+            os.environ.get("THREAD_POOL_WORKERS")
+            or self.config.get('concurrency', 'thread_pool_workers', fallback='20')
         )
 
 
