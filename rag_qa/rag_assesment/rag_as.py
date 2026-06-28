@@ -2,21 +2,30 @@
 # 导入pandas库，用于数据处理和保存CSV文件
 import pandas as pd
 # 导入ragas库的evaluate函数，用于执行RAG评估
+# Monkey-patch 缺失的 langchain_community.chat_models.vertexai 模块，避免 ragas 导入失败
+import sys, types
+import langchain_community.chat_models as chat_models_module
+vertexai_module = types.ModuleType("langchain_community.chat_models.vertexai")
+class _ChatVertexAI:
+    def __init__(self, *args, **kwargs):
+        raise ImportError("ChatVertexAI is not available.")
+vertexai_module.ChatVertexAI = _ChatVertexAI
+sys.modules["langchain_community.chat_models.vertexai"] = vertexai_module
+chat_models_module.vertexai = vertexai_module
+
 from ragas import evaluate
 # 导入ragas的评估指标，包括忠实度、答案相关性、上下文相关性和上下文召回率
-from ragas.metrics import (
-    faithfulness,
-    answer_relevancy,
-    context_precision, # context_relevancy(原来的写法)两者是一回事
-    context_recall
+from ragas.metrics.collections import (
+    Faithfulness,
+    AnswerRelevancy,
+    ContextPrecision,
+    ContextRecall
 )
 # 导入datasets库的Dataset类，用于构建RAGAS所需的数据格式
 from datasets import Dataset
-# 导入langchain_openai的嵌入模型和聊天模型，用于评估时的语义计算和推理
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-# 导入langchain_community的Ollama聊天模型和嵌入模型，用于本地模型调用
-from langchain_community.chat_models import ChatOllama
-from langchain_community.embeddings import OllamaEmbeddings
+from openai import OpenAI
+from ragas.llms import llm_factory
+from ragas.embeddings.base import embedding_factory
 # 导入json库，用于加载JSON格式的评估数据集
 import json, os
 from dotenv import load_dotenv, find_dotenv
@@ -48,15 +57,10 @@ dataset = Dataset.from_dict(eval_data)
 print(f'dataset--》{dataset}')
 
 # 3. 配置RAGAS评估环境
-# 初始化ChatOpenAI模型，指定使用gpt-4模型，并设置OpenAI API密钥
-# llm = ChatOpenAI(model="gpt-4", openai_api_key=os.environ["OPENAI_API_KEY"])
-# # 初始化OpenAI嵌入模型，用于计算语义相似度，设置API密钥
-# embeddings = OpenAIEmbeddings(openai_api_key=os.environ["OPENAI_API_KEY"])
+ollama_client = OpenAI(api_key="ollama", base_url="http://localhost:11434/v1")
 
-# # 初始化ChatOllama模型，需要选择一个模型，设置ollama服务地址
-llm = ChatOllama(model="qwen2.5:7b", base_url='http://localhost:11434')
-# embeddings = OllamaEmbeddings(model="qwen2.5:7b",base_url='http://localhost:11434' )
-embeddings = OllamaEmbeddings(model="mxbai-embed-large",base_url='http://localhost:11434')
+llm = llm_factory("qwen2.5:7b", client=ollama_client)
+embeddings = embedding_factory("openai", model="mxbai-embed-large", client=ollama_client)
 
 
 # 4. 执行评估
@@ -66,10 +70,10 @@ result = evaluate(
     dataset=dataset,
     # 指定使用的评估指标列表
     metrics=[
-        faithfulness,  # 忠实度：答案是否基于上下文
-        answer_relevancy,  # 答案相关性：答案与问题的匹配度
-        context_precision,  # 上下文相关性：上下文是否仅包含相关信息
-        context_recall  # 上下文召回率：上下文是否包含所有必要信息
+        Faithfulness(llm=llm),  # 忠实度：答案是否基于上下文
+        AnswerRelevancy(llm=llm, embeddings=embeddings),  # 答案相关性：答案与问题的匹配度
+        ContextPrecision(llm=llm),  # 上下文相关性：上下文是否仅包含相关信息
+        ContextRecall(llm=llm)  # 上下文召回率：上下文是否包含所有必要信息
     ],
     # 传入配置好的LLM模型
     llm=llm,

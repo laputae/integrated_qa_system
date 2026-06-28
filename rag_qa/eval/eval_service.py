@@ -384,43 +384,40 @@ class EvalService:
         return Dataset.from_dict(data)
 
     def _create_langchain_llm(self):
-        from langchain_openai import ChatOpenAI
+        from openai import OpenAI
+        from ragas.llms import llm_factory
 
         model = self.config.EVAL_LLM_MODEL or self.config.LLM_MODEL
         base_url = self.config.EVAL_LLM_BASE_URL or self.config.DASHSCOPE_BASE_URL
         api_key = self.config.DASHSCOPE_API_KEY
 
-        return ChatOpenAI(
-            model=model,
-            openai_api_key=api_key,
-            openai_api_base=base_url,
-            temperature=0,
-        )
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        return llm_factory(model, client=client)
 
     def _create_langchain_embeddings(self):
+        from openai import OpenAI
+        from ragas.embeddings.base import embedding_factory
+
         base_url = self.config.EVAL_EMBEDDING_BASE_URL
         model = self.config.EVAL_EMBEDDING_MODEL
+        api_key = self.config.DASHSCOPE_API_KEY
 
         if "11434" in base_url or "ollama" in base_url.lower():
-            from langchain_community.embeddings import OllamaEmbeddings
-            return OllamaEmbeddings(model=model, base_url=base_url)
+            client = OpenAI(api_key="ollama", base_url=base_url.rstrip("/") + "/v1")
         else:
-            from langchain_openai import OpenAIEmbeddings
-            return OpenAIEmbeddings(
-                model=model,
-                openai_api_key=self.config.DASHSCOPE_API_KEY,
-                openai_api_base=base_url,
-            )
+            client = OpenAI(api_key=api_key, base_url=base_url)
+
+        return embedding_factory("openai", model=model, client=client)
 
     def _run_ragas(self, dataset: "Dataset") -> dict:
         self._ensure_ragas_importable()
 
         from ragas import evaluate
         from ragas.metrics.collections import (
-            faithfulness,
-            answer_relevancy,
-            context_precision,
-            context_recall,
+            Faithfulness,
+            AnswerRelevancy,
+            ContextPrecision,
+            ContextRecall,
         )
 
         llm = self._create_langchain_llm()
@@ -428,7 +425,12 @@ class EvalService:
 
         result = evaluate(
             dataset=dataset,
-            metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
+            metrics=[
+                Faithfulness(llm=llm),
+                AnswerRelevancy(llm=llm, embeddings=embeddings),
+                ContextPrecision(llm=llm),
+                ContextRecall(llm=llm),
+            ],
             llm=llm,
             embeddings=embeddings,
         )
