@@ -5,10 +5,8 @@ from typing import Optional
 
 from langchain_text_splitters import MarkdownTextSplitter, TextSplitter
 
-from rag_qa.edu_text_spliter.edu_chinese_recursive_text_splitter import (
-    ChineseRecursiveTextSplitter,
-)
-from rag_qa.edu_text_spliter.edu_model_text_spliter import AliTextSplitter
+from .edu_chinese_recursive_text_splitter import ChineseRecursiveTextSplitter
+from .edu_model_text_spliter import AliTextSplitter
 
 SEMANTIC = "semantic"
 RECURSIVE = "recursive"

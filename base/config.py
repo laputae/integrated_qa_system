@@ -73,11 +73,11 @@ class Config():
 
         # LLM 配置
         # LLM 模型名
-        self.LLM_MODEL =os.environ.get("DEEPSEEK_MODEL") or self.config.get('llm', 'model', fallback='deepseek-v4-pro')
+        self.LLM_MODEL =os.environ.get("DASHSCOPE_MODEL") or self.config.get('llm', 'model', fallback='deepseek-v4-pro')
         # DashScope API 密钥
-        self.DASHSCOPE_API_KEY =os.environ.get("DEEPSEEK_API_KEY") or self.config.get('llm', 'dashscope_api_key',fallback='')
+        self.DASHSCOPE_API_KEY =os.environ.get("DASHSCOPE_API_KEY") or self.config.get('llm', 'dashscope_api_key',fallback='')
         # DashScope API 地址
-        self.DASHSCOPE_BASE_URL =os.environ.get("DEEPSEEK_BASE_URL") or self.config.get('llm', 'dashscope_base_url',
+        self.DASHSCOPE_BASE_URL =os.environ.get("DASHSCOPE_BASE_URL") or self.config.get('llm', 'dashscope_base_url',
                                                   fallback='https://api.deepseek.com')
 
         # Chunking 策略配置

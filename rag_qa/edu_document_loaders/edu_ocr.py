@@ -1,11 +1,12 @@
 from typing import TYPE_CHECKING
 '''
-paddleocr：解析图片中的文字，也可以进行表格识别
-rapidocr_paddle 和 rapidocr_onnxruntime 两种导入方式
-主要区别在于它们所使用的推理引擎和硬件支持
-选择哪种方式最合适取决于你的硬件环境和性能需求。
-当你有 GPU 且追求速度时：使用 rapidocr_paddle。PaddlePaddle 原生支持在 GPU 上推理 PaddleOCR 模型，速度更快。
-当只有 CPU 且需要高效推理时：使用 rapidocr_onnxruntime。它在 CPU 上进行了优化，资源占用较低.
+OCR 引擎选择策略：
+- GPU 可用 + 显式要求 CUDA → rapidocr_paddle（GPU 加速，需 PaddlePaddle）
+- CPU 模式 → rapidocr_onnxruntime（ONNX Runtime，无 PaddlePaddle 依赖）
+
+Windows 上 PaddlePaddle 的 OneDNN 缺少 fused_conv2d 等算子，会报：
+  (NotFound) OneDnnContext does not have the input Filter
+因此 CPU 模式默认使用 rapidocr_onnxruntime 彻底绕开此问题。
 '''
 
 
@@ -18,15 +19,15 @@ def _cuda_available() -> bool:
 
 
 def get_ocr(use_cuda: bool = False) -> "RapidOCR":
-    """获取 OCR 实例。默认 CPU 模式，传入 use_cuda=True 启用 GPU。"""
-    try:
+    """获取 OCR 实例。
+
+    CPU 模式（默认）：使用 rapidocr_onnxruntime，无需 PaddlePaddle。
+    GPU 模式（use_cuda=True 且 CUDA 可用）：使用 rapidocr_paddle。
+    """
+    if use_cuda and _cuda_available():
         from rapidocr_paddle import RapidOCR
-        '''
-        det_use_cuda=True：启用检测模型的GPU加速。cls_use_cuda=True：启用分类模型的GPU加速。rec_use_cuda=True：启用识别模型的GPU加速。
-        '''
-        ocr = RapidOCR(det_use_cuda=use_cuda, cls_use_cuda=use_cuda, rec_use_cuda=use_cuda)
-    except ImportError:
-        #
-        from rapidocr_onnxruntime import RapidOCR
-        ocr = RapidOCR()
-    return ocr
+        ocr = RapidOCR(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
+        return ocr
+
+    from rapidocr_onnxruntime import RapidOCR
+    return RapidOCR()
