@@ -1,6 +1,6 @@
 # EduRAG — 企业级智能问答系统
 
-基于 **BM25 + RAG + LLM** 双级检索架构的企业级智能教育问答系统，面向生产环境设计，具备多租户隔离、JWT 认证鉴权、多级降级熔断、安全审计、速率限制等完整的企业级基础设施。支持 MySQL 精确匹配与 Milvus 向量语义检索的自动切换，提供流式 WebSocket 和 SSE 接口。
+基于 **BM25 + RAG + LLM** 双级检索架构的企业级智能教育问答系统，面向生产环境设计，具备多租户隔离、JWT 认证鉴权、多级降级熔断、安全审计、速率限制等完整的企业级基础设施。支持 MySQL 精确匹配与 Milvus 向量语义检索的自动切换，提供流式 WebSocket 接口和 React 风格前端界面。
 
 ## 企业级特性
 
@@ -8,15 +8,15 @@
 |------|------|
 | **多租户架构** | `tenant_id` FK 级联隔离，数据完全按租户划分，支持租户启用/禁用 |
 | **认证鉴权** | JWT Access Token + Refresh Token 双令牌机制，Redis 黑名单即时失效，bcrypt(cost=12) 密码哈希 |
-| **安全防护** | 网关三层中间件：SQL注入/XSS过滤 → 分级速率限制 → JWT校验 + 黑名单检查 |
+| **安全防护** | 网关三层中间件：SQL注入/XSS过滤 → 分级速率限制 → JWT校验 + 黑名单检查，外加安全响应头（CSP/HSTS/X-Frame-Options） |
 | **审计追踪** | 全事件审计日志（登录/登出/Token刷新/攻击拦截/限流触发/历史清除），持久化 MySQL |
 | **会话管理** | 多轮对话历史持久化，session_id + user_id + tenant_id 三维隔离，自动裁剪保留最近 5 轮 |
-| **健康检查** | 7 组件独立健康探测（MySQL/Redis/Milvus/LLM/Embedding/Reranker/Classifier），`/health` `/ready` `/status` 端点 |
+| **健康检查** | 10 组件独立健康探测（MySQL/Redis/Milvus/LLM/Embedding/Reranker/Classifier/LLM Reranker/HallucinationGuard/EvalQuality），`/health` `/ready` `/status` 端点 |
 | **多级降级** | 5 级自动降级（Level 0~4），熔断器 + 后台自动恢复，依赖故障时优雅降级而非崩溃 |
-| **生产韧性** | 数据库连接池（pool_size=10, max_overflow=20, pool_pre_ping, pool_recycle），LLM 指数退避重试，批量嵌入 Checkpoint/Resume 断点续传 |
+| **生产韧性** | 数据库连接池（pool_size=10, max_overflow=20, pool_pre_ping, pool_recycle），LLM 指数退避重试，批量嵌入 Checkpoint/Resume 断点续传，asyncio.Semaphore 并发控制 |
 | **GPU 加速** | PyTorch cu126 (CUDA 12.6) 原生支持；BGE-M3 默认 CPU 运行避免 fp16 类型不匹配，OCR/训练可选用 GPU |
 | **NLI 幻觉检测** | HallucinationGuard SoftGate — mDeBERTa-v3 逐句 NLI 验证，幻觉结果旁路标记而非阻断，WebSocket 实时告警客户端 |
-| **可观测性** | 结构化 JSON 日志（异步安全 RequestContext）+ Prometheus 全量指标（业务+检索+幻觉检测+健康）+ `/metrics` 端点 |
+| **可观测性** | 结构化 JSON 日志（异步安全 RequestContext）+ Prometheus 全量指标（业务+检索+幻觉检测+健康）+ `/metrics` 端点（可选 Basic Auth 保护） |
 | **评估自动化** | RAGAS 4 指标评估管道 — 周期执行 + 手动触发 → MySQL 持久化 → 回归检测（连续 N 次低 faithfulness 告警）→ 趋势 API |
 
 ## 架构概览
@@ -27,8 +27,8 @@
   ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                      FastAPI 网关层                            │
-│   WebSocket / SSE 流式  │  REST API  │  JWT认证  │  静态前端    │
-│   中间件: 安全过滤 → 速率限制 → JWT校验 → 审计日志              │
+│   WebSocket 流式  │  REST API  │  JWT认证  │  静态前端 (HTML/JS)│
+│   中间件: 安全过滤 → 速率限制 → JWT校验 → 安全响应头            │
 └──────────────────────────────────────────────────────────────┘
   │
   ▼
@@ -63,13 +63,13 @@
 
 ### 多级降级体系
 
-系统注册 7 个组件健康检查，按故障影响范围自动计算降级等级：
+系统注册 10 个组件健康检查，按故障影响范围自动计算降级等级：
 
 | 等级 | 名称 | 触发条件 | 行为 |
 |------|------|---------|------|
 | Level 0 | 全功能 | 全部健康 | 正常运行 |
 | Level 1 | 无 Redis | Redis 不可用 | 停用查询缓存、限流计数、Token 黑名单 |
-| Level 2 | 无 Milvus | Milvus / Embedding / Reranker / Classifier 不可用 | 仅 BM25，不执行 RAG |
+| Level 2 | 无 Milvus | Milvus / Embedding / Reranker / Classifier / LLM Reranker / HallucinationGuard 不可用 | 仅 BM25，不执行 RAG |
 | Level 3 | 无 LLM | LLM 不可用 | BM25 优先，Fallback 时返回原始检索上下文 |
 | Level 4 | 无 MySQL | MySQL 不可用 | 返回 503，拒绝所有查询 |
 
@@ -80,10 +80,12 @@
 ```
 integrated_qa_system/
 ├── base/                          # 基础设施
+│   ├── __init__.py                # 包初始化 + sys.path 配置
 │   ├── config.py                  # 配置管理（读取 config.ini）
+│   ├── settings.py                # Pydantic-settings 环境变量配置（12-factor app）
 │   ├── logger.py                  # 结构化 JSON 日志 + RequestContext（contextvars 异步安全）
-│   ├── health.py                  # 健康检查 + 多级降级 + 熔断器 + 自动恢复
-│   ├── metrics.py                 # Prometheus 业务指标（Counter/Histogram/Gauge，10+ 指标）
+│   ├── health.py                  # 健康检查 + 多级降级 + 熔断器 + 自动恢复（10 组件）
+│   ├── metrics.py                 # Prometheus 业务指标（Counter/Histogram/Gauge，11+ 指标）
 │   └── chunk_config.py            # 自适应 Chunk 配置管理器（线程安全单例，API 热更新）
 │
 ├── db_models/                     # SQLAlchemy 数据模型（7 张 ORM 表）
@@ -108,10 +110,12 @@ integrated_qa_system/
 │   ├── deps.py                    # FastAPI 依赖注入（get_current_user）
 │   ├── middleware.py               # 三层中间件（安全过滤 → 速率限制 → JWT校验）
 │   ├── security.py                # SQL注入/XSS 输入安全过滤
+│   ├── security_headers.py        # 安全响应头中间件（CSP/HSTS/X-Frame-Options/X-Content-Type-Options）
 │   ├── rate_limiter.py            # 分级速率限制（登录/注册/查询/流式）
 │   └── audit.py                   # 审计日志器（事件类型枚举 + 日志写入）
 │
 ├── mysql_qa/                      # Tier 1: BM25 精确匹配
+│   ├── __init__.py
 │   ├── main.py                    # MySQLQASystem 独立 CLI
 │   ├── db/mysql_client.py         # MySQL 查询（jpkb 表，raw SQL）
 │   ├── cache/redis_client.py      # Redis 缓存 + Token 黑名单 + 限流计数
@@ -119,6 +123,7 @@ integrated_qa_system/
 │   └── utils/preprocess.py        # jieba 中文分词
 │
 ├── rag_qa/                        # Tier 2: RAG 语义检索
+│   ├── __init__.py
 │   ├── rag_main.py                # RAG CLI（数据预处理 / 交互查询）
 │   ├── core/
 │   │   ├── rag_system.py          # RAGSystem（流式 + 对话历史 + 上下文质量检查 + 兜底回复）
@@ -135,6 +140,7 @@ integrated_qa_system/
 │   ├── edu_text_spliter/          # 文本分割器（递归/语义/Markdown，含自适应策略工厂）
 │   ├── rag_assesment/             # RAGAS 质量评估
 │   ├── eval/                      # 评估自动化管道
+│   │   ├── __init__.py
 │   │   └── eval_service.py        # EvalService（周期/手动/回归检测/趋势分析）
 │   ├── classify_data/             # 分类器训练数据
 │   └── models/                    # 本地模型文件
@@ -146,19 +152,29 @@ integrated_qa_system/
 │
 ├── scripts/                       # 运维脚本
 │   ├── seed_default_tenant.py     # 一键建表 + 写入默认租户
-│   └── migrate_add_is_deleted.py  # 迁移脚本：conversations 表新增 is_deleted 字段
+│   ├── import_jpkb_csv.py         # CSV 导入 jpkb 问答表（处理多行引号字段）
+│   ├── chunk_sweep.py             # Chunk 参数扫描工具
+│   ├── migrate_add_is_deleted.py  # 迁移脚本：conversations 表新增 is_deleted 字段
+│   └── migrate_add_chunk_config_snapshot.py  # 迁移脚本：eval_runs 表新增 chunk_config_snapshot 字段
 │
-├── static/                        # Web 前端（React JSX）
 ├── tests/                         # 测试
 │   ├── test_document_quality.py   # 文档质量评估冒烟测试
 │   ├── test_strategy_cache.py     # 策略选择缓存测试
 │   ├── test_chunk_config.py       # 自适应 Chunk 配置单元/集成测试
-│   └── test_hallucination_guard.py # HallucinationGuard 单元/集成测试
+│   ├── test_hallucination_guard.py # HallucinationGuard 单元/集成测试
+│   ├── test_gpu_fp16.py           # GPU fp16 兼容性测试
+│   └── test_eval_pipeline.py      # 评估管道端到端测试
+│
+├── static/                        # Web 前端
+│   ├── index.html                 # 单页应用（登录/注册 + 聊天界面 + 会话管理）
+│   └── src/App.jsx                # React JSX 组件
+│
 ├── main.py                        # 主调度器（IntegratedQASystem + 降级编排）
 ├── app.py                         # FastAPI 主入口（WebSocket + REST + 静态服务 + 健康端点）
-├── api.py                         # FastAPI SSE 流式接口
+├── use_api.py                     # 独立 SSE 流式客户端示例脚本
 ├── config.ini                     # 全局配置文件
 ├── pyproject.toml                 # 项目元数据与依赖（uv 管理）
+├── docker-compose.yml             # Docker Compose 基础设施服务（MySQL + Redis + Milvus + etcd + MinIO）
 └── logs/                          # 运行日志
 ```
 
@@ -168,7 +184,7 @@ integrated_qa_system/
 - **uv**（Python 包管理器，推荐）
 - **MySQL** 5.7+（建议 8.0）
 - **Redis** 6.0+
-- **Milvus** 2.4+（建议使用 Milvus Lite 或 Standalone）
+- **Milvus** 2.4+（建议使用 Milvus Standalone，依赖 etcd + MinIO）
 - **GPU**（可选，CUDA 12.6+，加速 BERT 分类器、BGE 嵌入、CrossEncoder 推理）
 - **CUDA**：PyTorch 使用 cu126 索引（`https://download.pytorch.org/whl/cu126`），内置 CUDA 12.6 运行时
 
@@ -191,7 +207,39 @@ uv sync
 #   - (可选) MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7 → rag_qa/models/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7/  (HallucinationGuard)
 ```
 
+## Docker Compose 快速启动基础设施
+
+项目提供了 `docker-compose.yml`，一键启动 MySQL、Redis、Milvus（含 etcd + MinIO）等基础设施服务：
+
+```bash
+# 启动所有基础设施服务（后台运行）
+docker compose up -d
+
+# 查看服务状态
+docker compose ps
+
+# 停止所有服务
+docker compose down
+
+# 停止并清除数据卷
+docker compose down -v
+```
+
+启动的服务：
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| MySQL 8.0 | 3306 | 关系数据库 |
+| Redis 7 | 6379 | 缓存 + Token 黑名单 |
+| Milvus 2.4 | 19530 | 向量数据库 |
+| etcd 3.5 | 2379 | Milvus 元数据存储 |
+| MinIO | 9000/9001 | Milvus 对象存储 |
+
+> **注意**：应用本身（FastAPI）需要单独启动（见下方「启动服务」），docker-compose 仅管理基础设施。各服务密码通过环境变量（`MYSQL_PASSWORD`、`REDIS_PASSWORD`）或 `.env` 文件配置，默认值与 `config.ini` 一致。
+
 ## 配置
+
+### 方式一：config.ini（传统方式）
 
 编辑项目根目录下 `config.ini`：
 
@@ -213,6 +261,7 @@ host = 127.0.0.1
 port = 19530
 database_name = itcast
 collection_name = edurag_final
+timeout = 10
 
 [llm]
 model = deepseek-v4-pro
@@ -274,9 +323,21 @@ recovery_interval = 60             # 后台自动恢复探测间隔（秒）
 circuit_breaker_threshold = 3      # 熔断器连续失败阈值
 circuit_breaker_cooldown = 30      # 熔断器冷却时间（秒）
 
+[concurrency]
+max_concurrent_llm_calls = 10      # asyncio.Semaphore 并发 LLM 调用上限
+thread_pool_workers = 20           # ThreadPoolExecutor 工作线程数
+
+[metrics]
+metrics_auth_user =                # /metrics 端点 Basic Auth 用户名（空=无认证）
+metrics_auth_password =            # /metrics 端点 Basic Auth 密码
+
+[security_headers]
+enabled = true                     # 安全响应头中间件开关（CSP/HSTS/X-Frame-Options 等）
+
 [app]
 valid_sources = ["ai", "java", "test", "ops", "bigdata"]
 customer_service_phone = 12345678
+cors_origins = http://localhost:3000,http://127.0.0.1:8000
 
 [hallucination_guard]
 enabled = false                          # NLI 幻觉检测开关
@@ -304,7 +365,33 @@ log_max_bytes = 10485760           # 单个日志文件最大字节数（10 MB�
 log_backup_count = 5               # 滚动保留的日志文件数
 ```
 
-> **安全提示**：生产环境请通过环境变量注入敏感信息（API Key、密码），`config.py` 已支持 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`JWT_SECRET_KEY` 等环境变量覆盖。
+### 方式二：环境变量（12-Factor App，推荐生产环境）
+
+`base/settings.py` 使用 pydantic-settings 支持通过环境变量（或 `.env` 文件）覆盖所有关键配置，无需修改 `config.ini`：
+
+| 环境变量 | 对应配置 | 默认值 |
+|---------|---------|--------|
+| `MYSQL_HOST` | MySQL 地址 | `127.0.0.1` |
+| `MYSQL_USER` | MySQL 用户 | `root` |
+| `MYSQL_PASSWORD` | MySQL 密码 | (空) |
+| `MYSQL_DATABASE` | MySQL 数据库 | `subjects_kg` |
+| `REDIS_HOST` | Redis 地址 | `127.0.0.1` |
+| `REDIS_PORT` | Redis 端口 | `6379` |
+| `REDIS_PASSWORD` | Redis 密码 | (空) |
+| `MILVUS_HOST` | Milvus 地址 | `127.0.0.1` |
+| `MILVUS_PORT` | Milvus 端口 | `19530` |
+| `DEEPSEEK_API_KEY` | LLM API Key | (空) |
+| `DEEPSEEK_BASE_URL` | LLM API 地址 | `https://api.deepseek.com` |
+| `DEEPSEEK_MODEL` | LLM 模型名 | `deepseek-v4-pro` |
+| `JWT_SECRET_KEY` | JWT 签名密钥 | (空) |
+| `SECURITY_MODE` | 安全模式（`dev`/`prod`） | `dev` |
+| `CORS_ORIGINS` | CORS 允许来源（逗号分隔） | `http://localhost:3000,http://127.0.0.1:8000` |
+| `SECURE_HEADERS_ENABLED` | 安全响应头开关 | `true` |
+| `MAX_CONCURRENT_LLM_CALLS` | 并发 LLM 调用上限 | `10` |
+| `LOG_LEVEL` | 日志级别 | `INFO` |
+| `METRICS_AUTH_USER` / `METRICS_AUTH_PASSWORD` | `/metrics` Basic Auth | (空) |
+
+在 `SECURITY_MODE=prod` 模式下，`JWT_SECRET_KEY`、`MYSQL_PASSWORD`、`REDIS_PASSWORD`、`METRICS_AUTH_USER`、`METRICS_AUTH_PASSWORD` 必须通过环境变量设置，否则启动报错。
 
 ## 数据库初始化
 
@@ -312,7 +399,7 @@ log_backup_count = 5               # 滚动保留的日志文件数
 
 | 存储 | 用途 | 管理方式 |
 |------|------|----------|
-| MySQL | 业务数据（租户/用户/会话/令牌/审计） + BM25 问答对 | 5 ORM + 1 raw SQL |
+| MySQL | 业务数据（租户/用户/会话/令牌/审计/评估） + BM25 问答对 | 7 ORM + 1 raw SQL |
 | Milvus | 文档向量（稠密 + 稀疏混合嵌入） | pymilvus / LlamaIndex |
 | SQLite | 文件摄入追踪（哈希、状态、块计数） | IngestionTracker |
 
@@ -325,7 +412,7 @@ USE subjects_kg;
 
 ### 方式一：自动建表（推荐）
 
-启动应用时，`IntegratedQASystem` 初始化会自动调用 `Base.metadata.create_all(engine)` 创建所有 SQLAlchemy 管理的表（tenants / users / conversations / refresh_tokens / audit_logs），并运行 seed 脚本写入默认租户：
+启动应用时，`IntegratedQASystem` 初始化会自动调用 `Base.metadata.create_all(engine)` 创建所有 SQLAlchemy 管理的表（tenants / users / conversations / refresh_tokens / audit_logs / eval_runs / eval_results），并运行 seed 脚本写入默认租户：
 
 ```bash
 # 1. 先创建数据库（见上方 SQL）
@@ -333,7 +420,7 @@ USE subjects_kg;
 uv run python scripts/seed_default_tenant.py
 ```
 
-`jpkb` 问答表不走 ORM，需要手动创建（见下方方式二）。
+`jpkb` 问答表不走 ORM，需要手动创建（见下方方式二）或使用 CSV 导入脚本自动建表。
 
 ### 方式二：手动建表
 
@@ -346,8 +433,8 @@ uv run python scripts/seed_default_tenant.py
 CREATE TABLE IF NOT EXISTS jpkb (
     id           INT AUTO_INCREMENT PRIMARY KEY,
     subject_name VARCHAR(20)  NOT NULL COMMENT '学科名称',
-    question     VARCHAR(1000) NOT NULL COMMENT '问题文本',
-    answer       VARCHAR(1000) NOT NULL COMMENT '答案文本'
+    question     VARCHAR(2000) NOT NULL COMMENT '问题文本',
+    answer       TEXT         NOT NULL COMMENT '答案文本'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ===================== 多租户 & 认证表（SQLAlchemy ORM 管理） =====================
@@ -444,27 +531,24 @@ ON DUPLICATE KEY UPDATE name = name;
 | `conversations` | 对话历史（按 session_id + user_id + tenant_id 隔离） | SQLAlchemy ORM（自动建表） |
 | `refresh_tokens` | JWT Refresh Token 持久化 | SQLAlchemy ORM（自动建表） |
 | `audit_logs` | 用户操作审计日志 | SQLAlchemy ORM（自动建表） |
+| `eval_runs` | 评估任务记录（状态/聚合分数/触发方式） | SQLAlchemy ORM（自动建表） |
+| `eval_results` | 单题评估结果（4 指标分项分数） | SQLAlchemy ORM（自动建表） |
 
 ### 导入 BM25 问答数据
 
-将 CSV 数据导入 `jpkb` 表：
+**方式一：Python 脚本导入（推荐，自动建表 + 处理多行字段）**
 
-```sql
--- CSV 格式：subject_name, question, answer
-LOAD DATA LOCAL INFILE 'mysql_qa/data/JP学科知识问答.csv'
-INTO TABLE jpkb
-FIELDS TERMINATED BY ','
-OPTIONALLY ENCLOSED BY '"'
-LINES TERMINATED BY '\n'
-IGNORE 1 ROWS
-(subject_name, question, answer);
+```bash
+uv run python scripts/import_jpkb_csv.py
 ```
 
-或者用 Python 脚本导入：
+脚本自动读取 `mysql_qa/data/JP学科知识问答.csv`，创建 `jpkb` 表并导入数据。
+
+**方式二：CSV 手动导入**
 
 ```python
 import csv
-from db_models.base import SessionLocal, engine
+from db_models.base import SessionLocal
 from sqlalchemy import text
 
 with open('mysql_qa/data/JP学科知识问答.csv', 'r', encoding='utf-8') as f:
@@ -537,17 +621,25 @@ result = incremental_process_and_index("rag_qa/data/ai_data")
 # 1. 安装依赖
 uv sync
 
-# 2. 编辑 config.ini，填写 MySQL / Redis / Milvus 连接信息和 LLM API Key
+# 2. 配置环境
+#    方式 A: 编辑 config.ini，填写 MySQL / Redis / Milvus 连接信息和 LLM API Key
+#    方式 B: 设置环境变量（DEEPSEEK_API_KEY、JWT_SECRET_KEY 等），见上方配置章节
 
-# 3. 创建 MySQL 数据库
+# 3. 启动基础设施（二选一）
+#    方式 A: Docker Compose 一键启动 MySQL + Redis + Milvus
+    docker compose up -d
+#    方式 B: 手动启动各服务
+
+# 4. 创建 MySQL 数据库
 #    在 MySQL 中执行：CREATE DATABASE IF NOT EXISTS subjects_kg DEFAULT CHARACTER SET utf8mb4;
 
-# 4. 一键建表 + 写入默认租户
+# 5. 一键建表 + 写入默认租户
 uv run python scripts/seed_default_tenant.py
 
-# 5. 手动创建 jpkb 表并导入问答数据（参考上方「数据库初始化」→「方式二」的 SQL）
+# 6. 导入 BM25 问答数据
+uv run python scripts/import_jpkb_csv.py
 
-# 6. 构建 RAG 向量库（参考上方「构建 RAG 向量库」）
+# 7. 构建 RAG 向量库（参考上方「构建 RAG 向量库」）
 uv run python rag_qa/rag_main.py --data-processing
 ```
 
@@ -559,7 +651,7 @@ uv run python rag_qa/rag_main.py --data-processing
 uv run uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-启动后访问 `http://localhost:8000` 使用 Web 聊天界面。
+启动后访问 `http://localhost:8000` 使用 Web 聊天界面（登录/注册 + 流式对话 + 会话管理）。
 
 API 端点：
 
@@ -568,52 +660,45 @@ API 端点：
 | GET | `/` | 聊天 Web 界面 | 无 |
 | GET | `/health` | Liveness 探针（进程存活） | 无 |
 | GET | `/ready` | Readiness 探针（可服务状态 + 降级等级） | 无 |
-| GET | `/status` | 详细状态（7 组件健康 + 运行时长） | 无 |
+| GET | `/status` | 详细状态（10 组件健康 + 运行时长） | 无 |
 | POST | `/api/auth/register` | 用户注册 | 无 |
 | POST | `/api/auth/login` | 用户登录，返回 JWT | 无 |
 | POST | `/api/auth/refresh` | 刷新 Access Token | Refresh Token |
 | POST | `/api/auth/logout` | 登出（Token 加入黑名单） | 必须 |
-| POST | `/api/create_session` | 创建会话 | 可选 |
+| POST | `/api/create_session` | 创建会话 | 必须 |
 | GET | `/api/sessions` | 获取用户会话列表 | 必须 |
 | POST | `/api/query` | 非流式查询（BM25 快捷接口，含降级检查） | 可选 |
 | WebSocket | `/api/stream` | 流式查询（支持 RAG 流式输出 + external_context） | Token 参数 |
 | GET | `/api/history/{session_id}` | 获取对话历史 | 必须 |
 | POST | `/api/history/delete` | 批量删除对话历史（逻辑删除） | 必须 |
 | GET | `/api/sources` | 获取支持的学科类别 | 无 |
-| GET | `/metrics` | Prometheus 指标端点（业务 + HTTP 指标） | 无 |
+| GET | `/metrics` | Prometheus 指标端点（业务 + HTTP 指标） | 可选 Basic Auth |
 | GET | `/api/chunk-config` | 获取当前 Chunk 配置 | 必须 |
-| PUT | `/api/chunk-config` | 热更新 Chunk 配置（内存生效，不持久化） | 必须 |
-| POST | `/api/chunk-config/reload` | 从 config.ini 重新加载 Chunk 配置 | 必须 |
-| POST | `/api/eval/run` | 手动触发一次评估 | 必须 |
-| GET | `/api/eval/runs` | 查询历史评估列表（分页） | 必须 |
-| GET | `/api/eval/runs/{run_id}` | 查看单次评估详情（含每题分数） | 必须 |
-| GET | `/api/eval/trends` | 获取指标趋势数据（用于仪表盘） | 必须 |
-| GET | `/api/eval/status` | 当前质量概览（最新分数 + 回归状态 + 趋势） | 必须 |
+| PUT | `/api/chunk-config` | 热更新 Chunk 配置（内存生效，不持久化） | 管理员 |
+| POST | `/api/chunk-config/reload` | 从 config.ini 重新加载 Chunk 配置 | 管理员 |
+| POST | `/api/eval/run` | 手动触发一次评估 | 管理员 |
+| GET | `/api/eval/runs` | 查询历史评估列表（分页） | 管理员 |
+| GET | `/api/eval/runs/{run_id}` | 查看单次评估详情（含每题分数 + 可选上下文） | 管理员 |
+| GET | `/api/eval/trends` | 获取指标趋势数据（用于仪表盘） | 管理员 |
+| GET | `/api/eval/status` | 当前质量概览（最新分数 + 回归状态 + 趋势） | 管理员 |
 
-### 方式二：SSE 流式接口
-
-```bash
-uv run uvicorn api:app --host 127.0.0.1 --port 8000
-```
-
-POST `/query` 请求体：
-
-```json
-{
-  "query": "用上下文管理器实现函数运行时间的计算？",
-  "source_filter": "ai",
-  "session_id": "a1b2c3d4-...",
-  "external_context": "由上游编排层注入的 Function Calling 结果（可选）"
-}
-```
-
-### 方式三：命令行交互
+### 方式二：命令行交互
 
 ```bash
 uv run python main.py               # 集成问答（BM25 + RAG + 对话历史）
 uv run python mysql_qa/main.py     # MySQL BM25 独立问答
 uv run python rag_qa/rag_main.py   # RAG 独立问答
 ```
+
+### 方式三：SSE 流式客户端（Python）
+
+项目提供了 `use_api.py` 作为独立 SSE 流式客户端示例：
+
+```bash
+uv run python use_api.py
+```
+
+该脚本演示了如何通过 HTTP 流式请求调用问答 API，支持自定义问题、学科过滤和会话管理。
 
 ## 核心技术说明
 
@@ -719,6 +804,15 @@ LLM 根据查询特征自动从四种策略中选取（结果以 Redis 缓存 7 
 
 LLM 调用失败时自动重试（`[retry]` 配置），延迟按指数增长：`base_delay * 2^attempt`，上限 `max_delay`。可重试异常包括：`APITimeoutError`、`APIConnectionError`、`InternalServerError`、`RateLimitError`、`ConnectionError`、`TimeoutError`。
 
+### 并发控制
+
+系统通过两层机制控制并发，防止资源耗尽：
+
+- **asyncio.Semaphore**（`max_concurrent_llm_calls`，默认 10）：限制同时进行的 LLM 调用数，在 WebSocket 流式查询中生效。超过上限的请求自动排队等待
+- **ThreadPoolExecutor**（`thread_pool_workers`，默认 20）：工作线程池，用于 RAG 检索和 LLM 调用的同步→异步桥接
+
+RAG 流式生成通过 `asyncio.Queue` 在线程池和 asyncio 事件循环之间传递 token，确保高并发下流式输出不阻塞。
+
 ### Few-shot Prompt 与兜底回复
 
 Prompt 模板升级为 Few-shot 格式，包含「正常回答」和「无法回答」两个示例，引导 LLM 遵循以下规则：
@@ -813,7 +907,7 @@ LLM 流式生成完成
 
 ### Prometheus 指标采集
 
-`base/metrics.py` 定义 10+ 业务指标，均注册到 Prometheus 默认注册表，由 `prometheus-fastapi-instrumentator` 统一暴露至 `GET /metrics`：
+`base/metrics.py` 定义 11+ 业务指标，均注册到 Prometheus 默认注册表，由 `prometheus-fastapi-instrumentator` 统一暴露至 `GET /metrics`：
 
 | 指标 | 类型 | 标签 | 说明 |
 |------|------|------|------|
@@ -829,7 +923,16 @@ LLM 流式生成完成
 | `qa_component_health` | Gauge | `component` | 组件健康状态（1=正常, 0=异常） |
 | `qa_degradation_level` | Gauge | — | 当前降级等级（0~4） |
 
-HTTP 层指标（请求数、延迟等）由 `prometheus-fastapi-instrumentator` 自动采集。所有指标可直接接入 Grafana 仪表盘实现可视化监控。
+HTTP 层指标（请求数、延迟等）由 `prometheus-fastapi-instrumentator` 自动采集。`/metrics` 端点支持可选的 Basic Auth 保护（`[metrics]` 配置节）。所有指标可直接接入 Grafana 仪表盘实现可视化监控。
+
+### 12-Factor App 配置管理
+
+`base/settings.py` 使用 pydantic-settings 实现符合 12-Factor App 的配置管理：
+
+- **双重配置源**：`config.ini` 提供完整默认值，环境变量 / `.env` 文件覆盖敏感配置
+- **启动验证**：`validate_config()` 在 FastAPI 启动时检查必填字段，`SECURITY_MODE=prod` 下强制敏感配置通过环境变量注入
+- **字段校验**：`valid_sources` 必须为合法 JSON 数组，`jwt_secret_key` / 数据库密码等在 production 模式下不可为空
+- **类型安全**：Pydantic 自动完成类型转换和验证，配置读取失败时明确报错而非静默
 
 ### 评估自动化管道
 
@@ -851,24 +954,25 @@ HTTP 层指标（请求数、延迟等）由 `prometheus-fastapi-instrumentator`
 5. 执行回归检测（独立于 run 状态，检测失败不影响 run 完成）
 
 **API 端点**：
-- `POST /api/eval/run` — 手动触发评估
+- `POST /api/eval/run` — 手动触发评估（异步后台执行，返回 202 + run_id）
 - `GET /api/eval/runs` — 历史评估列表（分页）
-- `GET /api/eval/runs/{run_id}` — 单次评估详情（含每题分数）
+- `GET /api/eval/runs/{run_id}` — 单次评估详情（含每题分数 + 可选上下文）
 - `GET /api/eval/trends` — 指标趋势（用于 Grafana 等仪表盘）
 - `GET /api/eval/status` — 质量概览（最新分数 + 回归状态 + 趋势方向）
 
 ### 网关安全体系（企业级防护）
 
-三层中间件（`gateway/middleware.py`）对所有 `/api/` 请求依次执行，构建纵深防御：
+三层中间件（`gateway/middleware.py`）对所有 `/api/` 请求依次执行，配合安全响应头中间件构建纵深防御：
 
 ```
-请求 → Layer 1: SecurityFilter → Layer 2: RateLimiter → Layer 3: AuthMiddleware → 业务层
-               │                        │                       │
-               ├─ SQL注入检测           ├─ 登录: IP限流         ├─ Bearer Token 提取
-               ├─ XSS 攻击检测          ├─ 注册: IP限流         ├─ Token 黑名单检查 (Redis)
-               ├─ 恶意请求体拦截        ├─ 查询: 用户+租户限流   ├─ JWT 签名校验
-               └─ 审计日志记录          ├─ 流式: 用户+租户限流   └─ 用户信息注入 request.scope
-                                        └─ 审计日志记录
+请求 → Layer 1: SecurityFilter → Layer 2: RateLimiter → Layer 3: AuthMiddleware → SecurityHeaders → 业务层
+               │                        │                       │                        │
+               ├─ SQL注入检测           ├─ 登录: IP限流         ├─ Bearer Token 提取    ├─ HSTS (max-age=1y)
+               ├─ XSS 攻击检测          ├─ 注册: IP限流         ├─ Token 黑名单检查     ├─ CSP (self + CDN)
+               ├─ 恶意请求体拦截        ├─ 查询: 用户+租户限流   ├─ JWT 签名校验         ├─ X-Frame-Options: DENY
+               └─ 审计日志记录          ├─ 流式: 用户+租户限流   └─ 用户信息注入         ├─ X-Content-Type-Options
+                                        └─ 审计日志记录                                  ├─ X-XSS-Protection
+                                                                                         └─ Referrer-Policy
 ```
 
 **白名单路径**（跳过认证）：`/api/auth/login`、`/api/auth/register`、`/api/auth/refresh`、`/health`、`/ready`、`/status`、`/api/sources`
@@ -894,6 +998,17 @@ HTTP 层指标（请求数、延迟等）由 `prometheus-fastapi-instrumentator`
 - 历史以 `[{question, answer}, ...]` 形式注入 RAG 提示词模板，保持多轮上下文的连贯可追溯
 - **逻辑删除**：`is_deleted` 字段标记删除，查询自动过滤；前端支持多选 + 全选批量删除，`POST /api/history/delete` 接收 `{session_ids: [...]}`
 
+### 前端界面
+
+`static/index.html` 为单页应用，纯 HTML/CSS/JS 实现，零构建步骤：
+
+- **登录/注册页**：支持用户名密码认证 + 租户选择 + "记住密码"（localStorage/sessionStorage 双存储）
+- **聊天界面**：左侧会话列表（多选删除 + 全选）+ 右侧流式对话区
+- **自动 Token 刷新**：Access Token 过期时自动使用 Refresh Token 续期
+- **Markdown 渲染**：使用 marked.js 渲染富文本回答（代码块、表格等）
+- **WebSocket 流式**：RAG 流式生成时逐 token 刷新 Markdown 渲染
+- `static/src/App.jsx` 提供了 React JSX 版本的组件实现，可按需构建
+
 ## 评估
 
 系统提供两层评估能力：
@@ -911,6 +1026,30 @@ uv run python rag_as.py
 
 详见上方「评估自动化管道」章节。通过 `EvalService` 将评估升级为持续运行的质量监控管道，支持周期执行、手动触发、回归检测和趋势分析，结果持久化 MySQL 并通过 REST API 暴露。
 
+## 测试
+
+```bash
+# 运行所有测试
+uv run pytest tests/
+
+# 运行单个测试文件
+uv run pytest tests/test_chunk_config.py
+
+# 带详细输出
+uv run pytest tests/ -v
+```
+
+测试文件：
+
+| 文件 | 内容 |
+|------|------|
+| `test_document_quality.py` | 文档质量评估冒烟测试 |
+| `test_strategy_cache.py` | 检索策略选择缓存测试 |
+| `test_chunk_config.py` | 自适应 Chunk 配置单元/集成测试 |
+| `test_hallucination_guard.py` | HallucinationGuard NLI 幻觉检测单元/集成测试 |
+| `test_gpu_fp16.py` | GPU fp16 类型兼容性测试 |
+| `test_eval_pipeline.py` | 评估管道端到端测试 |
+
 ## License
 
 待定
@@ -923,3 +1062,5 @@ uv run python rag_as.py
 - [LlamaIndex](https://www.llamaindex.ai/) — 数据索引框架
 - [LangChain](https://www.langchain.com/) — LLM 应用框架
 - [RapidOCR](https://github.com/RapidAI/RapidOCR) — OCR 引擎
+- [RAGAS](https://docs.ragas.io/) — RAG 评估框架
+- [mDeBERTa-v3](https://huggingface.co/MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7) — 多语言 NLI 幻觉检测
