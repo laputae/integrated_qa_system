@@ -1,0 +1,59 @@
+# Python 虚拟环境
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+.claude/
+CLAUDE.md
+
+# 日志与数据
+logs/
+*.log
+checkpoints/
+
+# 模型文件（不入镜像，运行时挂载）
+rag_qa/models/
+*.safetensors
+*.pt
+*.bin
+*.ckpt
+*.model
+
+# 文档（不入镜像）
+*.docx
+*.pptx
+*.pdf
+*.jpg
+
+# Docker 自身（entrypoint.sh 除外）
+docker/mysql/
+docker-compose.yml
+docker-compose.prod.yml
+Dockerfile
+Dockerfile.gpu
+.dockerignore
+
+# CI/CD
+.github/
+
+# 测试（不入生产镜像）
+tests/
+
+# 敏感本地配置（不入镜像，通过环境变量传入）
+.env
+.env.local
+
+# README（非运行时必需）
+README.md

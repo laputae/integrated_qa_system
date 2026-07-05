@@ -174,7 +174,12 @@ integrated_qa_system/
 ├── use_api.py                     # 独立 SSE 流式客户端示例脚本
 ├── config.ini                     # 全局配置文件
 ├── pyproject.toml                 # 项目元数据与依赖（uv 管理）
-├── docker-compose.yml             # Docker Compose 基础设施服务（MySQL + Redis + Milvus + etcd + MinIO）
+├── Dockerfile                     # Docker 多阶段构建（CPU 版本）
+├── .dockerignore                  # Docker 构建忽略规则
+├── Makefile                       # 开发便利工具（lint/format/test/docker-*）
+├── docker/
+│   └── entrypoint.sh              # Docker 容器入口脚本
+├── docker-compose.yml             # Docker Compose（基础设施 + 应用，profile 控制）
 └── logs/                          # 运行日志
 ```
 
@@ -207,35 +212,76 @@ uv sync
 #   - (可选) MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7 → rag_qa/models/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7/  (HallucinationGuard)
 ```
 
-## Docker Compose 快速启动基础设施
+## Docker 部署
 
-项目提供了 `docker-compose.yml`，一键启动 MySQL、Redis、Milvus（含 etcd + MinIO）等基础设施服务：
+项目支持完整的 Docker 容器化部署，包含应用本身和所有基础设施服务。使用 Compose profiles 控制启动范围，保持向后兼容。
+
+### 完整栈启动（基础设施 + 应用）
 
 ```bash
-# 启动所有基础设施服务（后台运行）
-docker compose up -d
+# 构建镜像并启动全部服务（MySQL + Redis + Milvus + etcd + MinIO + App）
+docker compose --profile dev up -d --build
 
-# 查看服务状态
-docker compose ps
+# 查看所有服务状态
+docker compose --profile dev ps
 
-# 停止所有服务
-docker compose down
+# 查看应用日志
+docker compose logs -f app
 
-# 停止并清除数据卷
-docker compose down -v
+# 停止全部服务
+docker compose --profile dev down
 ```
 
-启动的服务：
+### 仅启动基础设施（向后兼容）
+
+不加 `--profile` 参数时行为不变，仅启动基础设施服务：
+
+```bash
+# 仅启动基础设施（MySQL + Redis + Milvus + etcd + MinIO）
+docker compose up -d
+
+# 应用单独启动（本地开发）
+uv run uvicorn app:app --host 127.0.0.1 --port 8000
+```
+
+### 单独构建 Docker 镜像
+
+```bash
+# 构建镜像
+docker build -t integrated-qa-system:latest .
+
+# 运行容器（需确保外部 MySQL/Redis/Milvus 可访问）
+docker run -p 8000:8000 \
+  -e MYSQL_HOST=host.docker.internal \
+  -e REDIS_HOST=host.docker.internal \
+  -e MILVUS_HOST=host.docker.internal \
+  -e DEEPSEEK_API_KEY=<your-key> \
+  -e JWT_SECRET_KEY=<random-64-char-hex> \
+  integrated-qa-system:latest
+```
+
+### 启动的服务
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
+| **App** (FastAPI) | 8000 | 应用服务（profiles: dev, prod） |
 | MySQL 8.0 | 3306 | 关系数据库 |
 | Redis 7 | 6379 | 缓存 + Token 黑名单 |
 | Milvus 2.4 | 19530 | 向量数据库 |
 | etcd 3.5 | 2379 | Milvus 元数据存储 |
 | MinIO | 9000/9001 | Milvus 对象存储 |
 
-> **注意**：应用本身（FastAPI）需要单独启动（见下方「启动服务」），docker-compose 仅管理基础设施。各服务密码通过环境变量（`MYSQL_PASSWORD`、`REDIS_PASSWORD`）或 `.env` 文件配置，默认值与 `config.ini` 一致。
+### Docker 镜像说明
+
+- **多阶段构建**：builder 阶段编译依赖 → runtime 阶段仅复制 `.venv` + 源码，最小化镜像体积
+- **基础镜像**：`python:3.11-slim-bookworm`（CPU 版本），兼容 PaddlePaddle/OpenCV/PyTorch
+- **包管理器**：使用 `uv`（比 pip 快 10-100x），通过 `uv sync --frozen` 锁定依赖版本
+- **非 root 用户**：运行时以 `appuser` (UID 1000) 运行，增强安全性
+- **模型文件不入镜像**：`rag_qa/models/` 通过 volume 挂载（`models_data`），避免镜像膨胀（模型 ~5.5GB）
+- **健康检查**：复用应用自带的 `/health` 端点，Docker 自动监控容器健康状态
+- **环境变量覆盖**：docker-compose 通过环境变量将 `127.0.0.1` 覆盖为容器网络服务名（`mysql`/`redis`/`milvus`）
+
+各服务密码通过环境变量（`MYSQL_PASSWORD`、`REDIS_PASSWORD`）或 `.env` 文件配置，默认值与 `config.ini` 一致。
 
 ## 配置
 
@@ -617,6 +663,33 @@ result = incremental_process_and_index("rag_qa/data/ai_data")
 
 ## 首次启动
 
+### 方式一：Docker Compose 完整部署（推荐，一键启动全部服务）
+
+```bash
+# 1. 克隆仓库
+git clone <repo-url>
+cd integrated_qa_system
+
+# 2. 配置环境变量（可选，也可使用 config.ini 默认值）
+#    创建 .env 文件，至少设置 DEEPSEEK_API_KEY 和 JWT_SECRET_KEY
+#    DEEPSEEK_API_KEY=<your-api-key>
+#    JWT_SECRET_KEY=<random-64-char-hex>
+
+# 3. 构建镜像并启动全部服务（基础设施 + 应用）
+docker compose --profile dev up -d --build
+
+# 4. 初始化数据库（进入容器执行）
+docker compose exec app uv run python scripts/seed_default_tenant.py
+
+# 5. 导入 BM25 问答数据（可选）
+docker compose exec app uv run python scripts/import_jpkb_csv.py
+
+# 6. 验证服务
+curl http://localhost:8000/health
+```
+
+### 方式二：本地开发部署
+
 ```bash
 # 1. 安装依赖
 uv sync
@@ -649,6 +722,8 @@ uv run python rag_qa/rag_main.py --data-processing
 
 ```bash
 uv run uvicorn app:app --host 127.0.0.1 --port 8000
+# 或使用 Makefile
+make docker-up    # Docker 完整栈
 ```
 
 启动后访问 `http://localhost:8000` 使用 Web 聊天界面（登录/注册 + 流式对话 + 会话管理）。
@@ -1026,17 +1101,23 @@ uv run python rag_as.py
 
 详见上方「评估自动化管道」章节。通过 `EvalService` 将评估升级为持续运行的质量监控管道，支持周期执行、手动触发、回归检测和趋势分析，结果持久化 MySQL 并通过 REST API 暴露。
 
-## 测试
+## 测试与代码检查
 
 ```bash
+# 代码检查（ruff lint）
+make lint
+# 或: uv run ruff check .
+
+# 代码格式化（ruff format）
+make format
+# 或: uv run ruff format .
+
 # 运行所有测试
-uv run pytest tests/
+make test
+# 或: uv run pytest tests/ -v
 
 # 运行单个测试文件
-uv run pytest tests/test_chunk_config.py
-
-# 带详细输出
-uv run pytest tests/ -v
+uv run pytest tests/test_chunk_config.py -v
 ```
 
 测试文件：
