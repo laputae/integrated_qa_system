@@ -1,41 +1,45 @@
-# MySQL 配置
+# ============================================================
+# integrated_qa_system — 配置文件模板
+# 使用: cp config.ini.example config.ini 后填入实际值
+# config.ini 不入 git，此模板文件供开发者参考
+# ============================================================
+
+# ---------- MySQL 配置 ----------
 [mysql]
 host = 127.0.0.1
 user = root
-password = 123456
+password = <your-mysql-password>
 database = subjects_kg
 
-# Redis 配置
+# ---------- Redis 配置 ----------
 [redis]
 host = 127.0.0.1
 port = 6379
-password = 1234
+password = <your-redis-password>
 db = 0
 
-
-# Milvus 配置
+# ---------- Milvus 配置 ----------
 [milvus]
 host = 127.0.0.1
 port = 19530
-# 记得创建这个表
 database_name = itcast
 collection_name = edurag_final
 timeout = 10
 
-# LLM 配置
+# ---------- LLM 配置 ----------
 [llm]
 model = deepseek-v4-pro
-dashscope_api_key =
+dashscope_api_key = <your-api-key>
 dashscope_base_url = https://api.deepseek.com
 
-# 嵌入模型配置
+# ---------- 嵌入模型配置 ----------
 [embedding]
 model = bge-m3
 batch_size = 32
 checkpoint_dir = checkpoints/embedding
 cache_ttl = 86400
 
-# 自适应Chunk配置
+# ---------- 自适应 Chunk 配置 ----------
 [chunking]
 default_strategy = recursive
 doc_type_strategies = {}
@@ -43,7 +47,7 @@ semantic_model_path =
 semantic_device = cpu
 semantic_fallback_strategy = recursive
 
-# 检索参数配置
+# ---------- 检索参数配置 ----------
 [retrieval]
 parent_chunk_size = 1200
 child_chunk_size = 300
@@ -53,35 +57,36 @@ candidate_m = 2
 max_workers = 3
 reranker_score_threshold = 0.3
 
-# LLM 重排序配置（关键查询精度提升）
+# ---------- LLM 重排序配置 ----------
 [llm_reranker]
 enabled = false
 critical_min_length = 20
 critical_strategies = 假设问题检索,回溯问题检索,子查询检索
 listwise_k = 3
 
-# 查询分类器配置
+# ---------- 查询分类器配置 ----------
 [classifier]
 confidence_threshold = 0.8
 
-# 策略选择配置
+# ---------- 策略选择配置 ----------
 [strategy]
 cache_ttl = 604800
 
-# LLM 重试配置
+# ---------- LLM 重试配置 ----------
 [retry]
 max_retries = 3
 base_delay = 1.0
 max_delay = 30.0
 
-# 认证配置
+# ---------- 认证配置 ----------
 [auth]
-jwt_secret_key =
+# 生成方式: openssl rand -hex 64
+jwt_secret_key = <generate-with-openssl-rand-hex-64>
 access_token_expire_minutes = 30
 refresh_token_expire_days = 7
 bcrypt_cost_factor = 12
 
-# 日志配置
+# ---------- 日志配置 ----------
 [logger]
 log_file = logs/app.log
 log_level = INFO
@@ -89,11 +94,11 @@ log_format = json
 log_max_bytes = 10485760
 log_backup_count = 5
 
-# 租户配置
+# ---------- 租户配置 ----------
 [tenant]
 default_tenant_name = default
 
-# 健康检查配置
+# ---------- 健康检查配置 ----------
 [health]
 check_timeout = 5.0
 cache_ttl = 30
@@ -101,7 +106,7 @@ recovery_interval = 60
 circuit_breaker_threshold = 3
 circuit_breaker_cooldown = 30
 
-# 评估自动化管道配置
+# ---------- 评估自动化管道配置 ----------
 [eval]
 eval_llm_model =
 eval_llm_base_url =
@@ -114,30 +119,29 @@ quality_warning_threshold = 0.7
 quality_critical_threshold = 0.4
 default_dataset_path = rag_qa/rag_assesment/rag_evaluate_data.json
 
-# HallucinationGuard NLI 实时幻觉检测
+# ---------- HallucinationGuard NLI 实时幻觉检测 ----------
 [hallucination_guard]
 enabled = false
 model = MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7
 entailment_threshold = 0.5
 contradiction_threshold = 0.5
 
-# 并发控制配置
+# ---------- 并发控制配置 ----------
 [concurrency]
 max_concurrent_llm_calls = 10
 thread_pool_workers = 20
 
-# /metrics 端点认证配置
+# ---------- /metrics 端点认证配置 ----------
 [metrics]
-metrics_auth_user =
-metrics_auth_password =
+metrics_auth_user = <your-metrics-user>
+metrics_auth_password = <your-metrics-password>
 
-# 安全响应头配置
+# ---------- 安全响应头配置 ----------
 [security_headers]
 enabled = true
 
-# 应用配置
+# ---------- 应用配置 ----------
 [app]
 valid_sources = ["ai", "java", "test", "ops", "bigdata"]
 customer_service_phone = 12345678
 cors_origins = http://localhost:3000,http://127.0.0.1:8000
-

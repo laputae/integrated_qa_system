@@ -34,6 +34,7 @@ Thumbs.db
 .env.local
 .claude/
 CLAUDE.md
+config.ini
 
 
 # ========== RAG使用的文档 ==========

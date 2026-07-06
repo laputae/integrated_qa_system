@@ -1,6 +1,3 @@
-from dotenv import load_dotenv
-load_dotenv()
-
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, HTTPException, Query, Depends
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
@@ -18,7 +15,6 @@ import re
 
 from main import IntegratedQASystem
 from base import logger
-from base.settings import validate_config
 from base.health import DegradationLevel
 from prometheus_fastapi_instrumentator import Instrumentator
 from gateway.middleware import GatewayMiddleware
@@ -44,9 +40,8 @@ from mysql_qa import RedisClient
 
 qa_system = IntegratedQASystem()
 
-# GAP-14: Fail-fast config validation at startup
-validate_config()
-logger.info("Config validation passed — all required settings present.")
+# Config validation happens inside Config.__init__() — fail-fast on missing critical fields
+logger.info("Config loaded from config.ini — all required settings present.")
 
 # asyncio.Semaphore for concurrency control — limits simultaneous LLM calls
 _llm_semaphore = asyncio.Semaphore(qa_system.config.MAX_CONCURRENT_LLM_CALLS)

@@ -28,8 +28,6 @@ from ragas.llms import llm_factory
 from ragas.embeddings.base import embedding_factory
 # 导入json库，用于加载JSON格式的评估数据集
 import json, os
-from dotenv import load_dotenv, find_dotenv
-load_dotenv(find_dotenv())
 
 # 1. 加载生成的数据集
 # 使用with语句打开JSON文件，确保文件正确关闭，指定编码为utf-8
