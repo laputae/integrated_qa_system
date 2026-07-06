@@ -189,7 +189,8 @@ class HallucinationGuard:
         NLI formulation: premise=context, hypothesis=claim.
         Labels: 0=entailment, 1=neutral, 2=contradiction.
         """
-        max_len = self.model.config.max_position_embeddings - len(claim) - 10
+        claim_token_len = len(self.tokenizer.encode(claim, add_special_tokens=False))
+        max_len = self.model.config.max_position_embeddings - claim_token_len - 10
         truncated_context = context[:max_len] if len(context) > max_len else context
 
         inputs = self.tokenizer(
