@@ -260,6 +260,25 @@ class IntegratedQASystem:
                 return None, True
         return None, True
 
+    def _resolve_pipeline_action(self, level, answer, need_rag):
+        """Determine next pipeline action after BM25 phase (pure logic, no I/O).
+
+        Returns (action, payload):
+        - ('bm25_hit', answer)   — BM25 matched, yield answer directly
+        - ('not_found', msg)     — RAG unavailable, yield error message
+        - ('degraded', None)     — LEVEL3_NO_LLM, do degraded retrieval
+        - ('full_rag', None)     — Full RAG pipeline with LLM streaming
+        """
+        if answer:
+            return ('bm25_hit', answer)
+        if not (need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS):
+            msg = (f"RAG 不可用 (降级等级: {level.name})"
+                   if level >= DegradationLevel.LEVEL2_NO_MILVUS else "未找到答案")
+            return ('not_found', msg)
+        if level == DegradationLevel.LEVEL3_NO_LLM:
+            return ('degraded', None)
+        return ('full_rag', None)
+
     def _record_query_metrics(self, level, source, session_id, user_id,
                               tenant_id, query, answer, start_time):
         """Record Prometheus metrics and update session history."""
@@ -294,31 +313,28 @@ class IntegratedQASystem:
             return
 
         history = self.get_session_history(session_id, user_id, tenant_id) if session_id else []
-
-        # Phase 1: BM25
         answer, need_rag = self._bm25_phase(query)
-        if answer:
-            self.logger.info(f"MySQL答案: {answer}")
+        action, payload = self._resolve_pipeline_action(level, answer, need_rag)
+
+        if action == 'bm25_hit':
+            self.logger.info(f"MySQL答案: {payload}")
             qa_bm25_hit_total.inc()
-            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, answer, start_time)
-            yield answer, True
+            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, payload, start_time)
+            yield payload, True
             return
 
-        # Phase 2: RAG fallback
-        if not (need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS):
-            msg = self._yield_not_found(level, source_filter, start_time,
-                                        f"RAG 不可用 (降级等级: {level.name})" if level >= DegradationLevel.LEVEL2_NO_MILVUS else "未找到答案")
-            yield msg, True
+        if action == 'not_found':
+            yield self._yield_not_found(level, source_filter, start_time, payload), True
             return
 
-        if level == DegradationLevel.LEVEL3_NO_LLM:
+        if action == 'degraded':
             self.logger.info("LLM 降级中，返回检索到的原始上下文")
             collected_answer = self._degraded_rag_retrieve(query, source_filter)
             self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time)
             yield collected_answer, True
             return
 
-        # Full RAG pipeline
+        # action == 'full_rag'
         self.logger.info("无可靠MySQL答案，回退到RAG")
         collected_answer = ""
         for token in self.rag_system.generate_answer(
@@ -354,25 +370,23 @@ class IntegratedQASystem:
             self.executor, self.get_session_history, session_id, user_id, tenant_id
         ) if session_id else []
 
-        # Phase 1: BM25 (offloaded to thread pool)
         answer, need_rag = await loop.run_in_executor(
             self.executor, self._bm25_phase, query
         )
-        if answer:
-            self.logger.info(f"[async] MySQL答案: {answer}")
+        action, payload = self._resolve_pipeline_action(level, answer, need_rag)
+
+        if action == 'bm25_hit':
+            self.logger.info(f"[async] MySQL答案: {payload}")
             qa_bm25_hit_total.inc()
-            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, answer, start_time)
-            yield answer, True
+            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, payload, start_time)
+            yield payload, True
             return
 
-        # Phase 2: RAG (offload to thread)
-        if not (need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS):
-            msg = self._yield_not_found(level, source_filter, start_time,
-                                        f"RAG 不可用 (降级等级: {level.name})" if level >= DegradationLevel.LEVEL2_NO_MILVUS else "未找到答案")
-            yield msg, True
+        if action == 'not_found':
+            yield self._yield_not_found(level, source_filter, start_time, payload), True
             return
 
-        if level == DegradationLevel.LEVEL3_NO_LLM:
+        if action == 'degraded':
             self.logger.info("[async] LLM 降级中，返回检索到的原始上下文")
             loop = asyncio.get_running_loop()
             collected_answer = await loop.run_in_executor(
@@ -382,7 +396,7 @@ class IntegratedQASystem:
             yield collected_answer, True
             return
 
-        # Full RAG pipeline — stream via Queue from thread pool
+        # action == 'full_rag' — stream via Queue from thread pool
         self.logger.info("[async] 无可靠MySQL答案，回退到RAG (async path)")
         queue: asyncio.Queue = asyncio.Queue()
 
