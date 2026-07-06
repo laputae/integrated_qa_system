@@ -10,6 +10,7 @@ from starlette.responses import JSONResponse, Response
 from base import RequestContext, logger
 from gateway.audit import AuditEventType, get_audit_logger
 from gateway.rate_limiter import RateLimiter
+from mysql_qa import get_redis_client
 from gateway.security import SecurityFilter
 
 AUTH_WHITELIST = {
@@ -177,8 +178,7 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                 )
             token = auth_header[7:]
             # Check blacklist
-            from mysql_qa import RedisClient
-            redis_client = RedisClient()
+            redis_client = get_redis_client()
             jti = get_token_jti(token)
             if jti and redis_client.is_token_blacklisted(jti):
                 return JSONResponse(

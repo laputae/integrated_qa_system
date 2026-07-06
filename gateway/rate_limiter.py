@@ -1,7 +1,7 @@
 import time
 from typing import Optional
 
-from mysql_qa import RedisClient
+from mysql_qa import RedisClient, get_redis_client
 
 
 class RateLimiter:
@@ -11,7 +11,7 @@ class RateLimiter:
     @property
     def redis(self):
         if self._redis is None:
-            self._redis = RedisClient()
+            self._redis = get_redis_client()
         return self._redis
 
     def _rate_limit_key(self, prefix: str, identifier: str) -> str:

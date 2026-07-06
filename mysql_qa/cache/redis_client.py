@@ -16,6 +16,15 @@ from base import Config, logger
 
 
 class RedisClient:
+    _instance = None
+
+    @classmethod
+    def get_instance(cls):
+        """返回共享的 RedisClient 单例（懒创建）。"""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
     def __init__(self):
         # 初始化日志
         self.logger = logger
@@ -109,6 +118,13 @@ class RedisClient:
     def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
         count = self.increment_rate_limit(key, window_seconds)
         return count <= limit
+
+
+def get_redis_client():
+    """返回共享的 RedisClient 单例（工厂函数）。"""
+    return RedisClient.get_instance()
+
+
 if __name__ == '__main__':
     redcli = RedisClient()
     # print(redcli)

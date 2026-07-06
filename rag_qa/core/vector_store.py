@@ -58,7 +58,8 @@ class VectorStore:
                  collection_name=conf.MILVUS_COLLECTION_NAME,
                  host=conf.MILVUS_HOST,
                  port=conf.MILVUS_PORT,
-                 database=conf.MILVUS_DATABASE_NAME):
+                 database=conf.MILVUS_DATABASE_NAME,
+                 redis_client=None):
         # 设置 Milvus 集合名称
         self.collection_name = collection_name
         # 设置 Milvus 主机地址
@@ -67,6 +68,8 @@ class VectorStore:
         self.port = port
         # 设置 Milvus 数据库名称
         self.database = database
+        # 注入共享 Redis 客户端（可选，为 None 时回退到工厂函数）
+        self._redis_client = redis_client
         # 设置日志记录器
         self.logger = logger
         # 检查CUDA是否可用
@@ -202,15 +205,20 @@ class VectorStore:
         """
         import hashlib
         import numpy as np
-        from mysql_qa import RedisClient
 
         if cache_ttl is None:
             cache_ttl = conf.EMBEDDING_CACHE_TTL
 
         cache_key = f"emb:{hashlib.md5(query.encode('utf-8')).hexdigest()}"
 
+        # 优先使用注入的共享实例，回退到工厂函数
+        if self._redis_client is not None:
+            redis_client = self._redis_client
+        else:
+            from mysql_qa import get_redis_client
+            redis_client = get_redis_client()
+
         try:
-            redis_client = RedisClient()
             cached = redis_client.get_data(cache_key)
             if cached is not None:
                 self.logger.info(f"查询嵌入缓存命中: {cache_key}")
@@ -232,7 +240,6 @@ class VectorStore:
                 "dense": query_embeddings["dense"][0].tolist(),
                 "sparse": _sparse_to_dict(query_embeddings["sparse"][0]),
             }
-            redis_client = RedisClient()
             redis_client.set_data(cache_key, cache_value, ttl=cache_ttl)
             self.logger.info(f"查询嵌入已缓存: {cache_key}")
         except Exception as e:

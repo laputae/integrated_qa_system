@@ -98,7 +98,7 @@ class IntegratedQASystem:
 
     def _init_vector_store(self):
         try:
-            vs = VectorStore()
+            vs = VectorStore(redis_client=self.redis_client)
             self.logger.info("VectorStore 初始化成功")
             return vs
         except Exception as e:

@@ -36,7 +36,7 @@ from db_models.base import init_db, SessionLocal, Base, engine
 from repositories.user_repo import UserRepository
 from repositories.conversation_repo import ConversationRepository
 from repositories.tenant_repo import TenantRepository
-from mysql_qa import RedisClient
+from mysql_qa import get_redis_client
 
 qa_system = IntegratedQASystem()
 
@@ -277,7 +277,7 @@ async def refresh_token(request: RefreshRequest):
         return JSONResponse(status_code=401, content={"detail": "Refresh Token 无效或已过期"})
 
     # Check blacklist
-    redis_client = RedisClient()
+    redis_client = get_redis_client()
     jti = payload.get("jti")
     if jti and redis_client.is_token_blacklisted(jti):
         return JSONResponse(status_code=401, content={"detail": "Refresh Token 已失效"})
@@ -319,7 +319,7 @@ async def refresh_token(request: RefreshRequest):
 @app.post("/api/auth/logout")
 async def logout(user: dict = Depends(require_auth)):
     audit = get_audit_logger()
-    redis_client = RedisClient()
+    redis_client = get_redis_client()
     jti = user.get("jti")
     if jti:
         redis_client.blacklist_token(jti, 3600)
@@ -687,7 +687,7 @@ async def websocket_endpoint(websocket: WebSocket):
     if token:
         try:
             payload = decode_access_token(token)
-            redis_client = RedisClient()
+            redis_client = get_redis_client()
             jti = payload.get("jti")
             if not jti or not redis_client.is_token_blacklisted(jti):
                 user_id = payload["user_id"]

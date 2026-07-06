@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from gateway.auth import decode_access_token
+from mysql_qa import get_redis_client
 
 AUTH_WHITELIST = {
     "/api/auth/login",
@@ -42,8 +43,7 @@ async def get_current_user(
 
     token = credentials.credentials
 
-    from mysql_qa import RedisClient
-    redis_client = RedisClient()
+    redis_client = get_redis_client()
 
     from gateway.auth import get_token_jti
     jti = get_token_jti(token)
