@@ -349,10 +349,15 @@ class IntegratedQASystem:
             yield "系统维护中，暂无法处理查询，请联系管理员。", True
             return
 
-        history = self.get_session_history(session_id, user_id, tenant_id) if session_id else []
+        loop = asyncio.get_running_loop()
+        history = await loop.run_in_executor(
+            self.executor, self.get_session_history, session_id, user_id, tenant_id
+        ) if session_id else []
 
-        # Phase 1: BM25 (inline)
-        answer, need_rag = self._bm25_phase(query)
+        # Phase 1: BM25 (offloaded to thread pool)
+        answer, need_rag = await loop.run_in_executor(
+            self.executor, self._bm25_phase, query
+        )
         if answer:
             self.logger.info(f"[async] MySQL答案: {answer}")
             qa_bm25_hit_total.inc()
