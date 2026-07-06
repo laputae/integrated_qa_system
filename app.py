@@ -711,9 +711,27 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
     await websocket.accept()
+
+    # Per-connection message rate limiter (local counter, no Redis overhead)
+    ws_msg_count = 0
+    ws_window_start = time.time()
+    ws_max_messages = qa_system.config.WS_MAX_MESSAGES_PER_CONNECTION
+    ws_window_secs = qa_system.config.WS_MESSAGE_WINDOW_SECONDS
+
     try:
         while True:
             data = await websocket.receive_text()
+
+            # Lightweight local rate limit — no Redis call per message
+            if ws_max_messages > 0:
+                now = time.time()
+                if now - ws_window_start > ws_window_secs:
+                    ws_msg_count = 0
+                    ws_window_start = now
+                ws_msg_count += 1
+                if ws_msg_count > ws_max_messages:
+                    await websocket.close(code=4429, reason="单连接消息数超限")
+                    break
             request_data = json.loads(data)
             query_text = request_data.get("query")
             source_filter = request_data.get("source_filter")

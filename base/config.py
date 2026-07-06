@@ -184,6 +184,8 @@ class Config():
         # 并发控制配置
         self.MAX_CONCURRENT_LLM_CALLS = self.config.getint('concurrency', 'max_concurrent_llm_calls', fallback=10)
         self.THREAD_POOL_WORKERS = self.config.getint('concurrency', 'thread_pool_workers', fallback=20)
+        self.WS_MAX_MESSAGES_PER_CONNECTION = self.config.getint('concurrency', 'max_messages_per_connection', fallback=50)
+        self.WS_MESSAGE_WINDOW_SECONDS = self.config.getint('concurrency', 'ws_message_window_seconds', fallback=60)
 
         # ========== 关键字段校验 ==========
         missing = []
