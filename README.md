@@ -14,7 +14,7 @@
 | **健康检查** | 10 组件独立健康探测（MySQL/Redis/Milvus/LLM/Embedding/Reranker/Classifier/LLM Reranker/HallucinationGuard/EvalQuality），`/health` `/ready` `/status` 端点 |
 | **多级降级** | 5 级自动降级（Level 0~4），熔断器 + 后台自动恢复，依赖故障时优雅降级而非崩溃 |
 | **生产韧性** | 数据库连接池（pool_size=10, max_overflow=20, pool_pre_ping, pool_recycle），LLM 指数退避重试，批量嵌入 Checkpoint/Resume 断点续传，asyncio.Semaphore 并发控制 |
-| **GPU 加速** | PyTorch cu126 (CUDA 12.6) 原生支持；BGE-M3 默认 CPU 运行避免 fp16 类型不匹配，OCR/训练可选用 GPU |
+| **纯 CPU 运行** | 全部依赖使用 CPU 版本，无需 GPU，降低部署门槛；OCR 引擎自动选择 RapidOCR ONNX Runtime |
 | **NLI 幻觉检测** | HallucinationGuard SoftGate — mDeBERTa-v3 逐句 NLI 验证，幻觉结果旁路标记而非阻断，WebSocket 实时告警客户端 |
 | **可观测性** | 结构化 JSON 日志（异步安全 RequestContext）+ Prometheus 全量指标（业务+检索+幻觉检测+健康）+ `/metrics` 端点（可选 Basic Auth 保护） |
 | **评估自动化** | RAGAS 4 指标评估管道 — 周期执行 + 手动触发 → MySQL 持久化 → 回归检测（连续 N 次低 faithfulness 告警）→ 趋势 API |
@@ -29,6 +29,7 @@
 │                      FastAPI 网关层                            │
 │   WebSocket 流式  │  REST API  │  JWT认证  │  静态前端 (HTML/JS)│
 │   中间件: 安全过滤 → 速率限制 → JWT校验 → 安全响应头            │
+│   路由层: routers/v1/ (auth / routes / eval / chunk / ws)      │
 └──────────────────────────────────────────────────────────────┘
   │
   ▼
@@ -81,14 +82,15 @@
 integrated_qa_system/
 ├── base/                          # 基础设施
 │   ├── __init__.py                # 包初始化 + sys.path 配置
-│   ├── config.py                  # 配置管理（读取 config.ini）
-│   ├── settings.py                # Pydantic-settings 环境变量配置（12-factor app）
+│   ├── config.py                  # 统一配置管理（单例，仅读取 config.ini）
 │   ├── logger.py                  # 结构化 JSON 日志 + RequestContext（contextvars 异步安全）
-│   ├── health.py                  # 健康检查 + 多级降级 + 熔断器 + 自动恢复（10 组件）
+│   ├── health.py                  # 健康编排层（SystemHealth + 降级等级 + 自动恢复）
+│   ├── health_checker.py          # 组件健康探测（10 组件独立检查方法）
+│   ├── health_types.py            # 健康类型定义（枚举 + 数据类 + 熔断器）
 │   ├── metrics.py                 # Prometheus 业务指标（Counter/Histogram/Gauge，11+ 指标）
 │   └── chunk_config.py            # 自适应 Chunk 配置管理器（线程安全单例，API 热更新）
 │
-├── db_models/                     # SQLAlchemy 数据模型（7 张 ORM 表）
+├── db_models/                     # SQLAlchemy 数据模型（8 张 ORM 表）
 │   ├── base.py                    # 引擎、Session、Base 基类
 │   ├── tenant.py                  # Tenant 模型（多租户）
 │   ├── user.py                    # User 模型（用户认证）
@@ -111,14 +113,22 @@ integrated_qa_system/
 │   ├── middleware.py               # 三层中间件（安全过滤 → 速率限制 → JWT校验）
 │   ├── security.py                # SQL注入/XSS 输入安全过滤
 │   ├── security_headers.py        # 安全响应头中间件（CSP/HSTS/X-Frame-Options/X-Content-Type-Options）
-│   ├── rate_limiter.py            # 分级速率限制（登录/注册/查询/流式）
+│   ├── rate_limiter.py            # 分级速率限制（登录/注册/查询/流式 + WebSocket 逐消息限流）
 │   └── audit.py                   # 审计日志器（事件类型枚举 + 日志写入）
+│
+├── routers/v1/                    # API 路由层（按资源拆分）
+│   ├── auth.py                    # 认证路由（注册/登录/刷新/登出 + 问候语检测）
+│   ├── routes.py                  # REST 路由（健康检查/就绪/状态/会话/查询/来源/历史删除）
+│   ├── eval_routes.py             # 评估路由（手动触发/历史列表/详情/趋势/质量概览）
+│   ├── chunk_config_routes.py     # Chunk 配置路由（获取/更新/重新加载）
+│   ├── ws.py                      # WebSocket 流式查询路由（/api/stream）
+│   └── schemas.py                 # Pydantic 请求/响应模型
 │
 ├── mysql_qa/                      # Tier 1: BM25 精确匹配
 │   ├── __init__.py
 │   ├── main.py                    # MySQLQASystem 独立 CLI
 │   ├── db/mysql_client.py         # MySQL 查询（jpkb 表，raw SQL）
-│   ├── cache/redis_client.py      # Redis 缓存 + Token 黑名单 + 限流计数
+│   ├── cache/redis_client.py      # Redis 连接池 + 缓存 + Token 黑名单 + 限流计数
 │   ├── retrieval/bm25_search.py   # BM25Okapi + Softmax 归一化
 │   └── utils/preprocess.py        # jieba 中文分词
 │
@@ -126,22 +136,36 @@ integrated_qa_system/
 │   ├── __init__.py
 │   ├── rag_main.py                # RAG CLI（数据预处理 / 交互查询）
 │   ├── core/
-│   │   ├── rag_system.py          # RAGSystem（流式 + 对话历史 + 上下文质量检查 + 兜底回复）
+│   │   ├── rag_system.py          # RAGSystem（流式 + 对话历史 + 上下文质量检查 + 兜底回复 + 流水线决策）
 │   │   ├── vector_store.py        # Milvus 向量库 + BGE-M3 混合检索 + 重排序 + 分数阈值过滤
 │   │   ├── embedding_registry.py  # 嵌入模型注册表（多模型 A/B 切换）+ 批量嵌入 + Checkpoint
+│   │   ├── embedding_cache.py     # Redis 查询嵌入缓存（稠密+稀疏），Cache-Aside 模式
 │   │   ├── llamaindex_processor.py # LlamaIndex 文档处理器（OCR加载 → 切分 → 批量索引）
 │   │   ├── ingestion_tracker.py   # SQLite 文件哈希追踪（增量加载：NEW/MODIFIED/UNCHANGED/DELETED）
 │   │   ├── document_processor.py  # 文档加载 + 父子块分割（传统管线）
+│   │   ├── document_quality.py    # 文档质量评估（三级评分：长度/有效字符/OCR噪音）
 │   │   ├── query_classifier.py    # BERT 查询分类器（通用/专业 + 置信度评分）
 │   │   ├── strategy_selector.py   # LLM 检索策略选择器（Redis 缓存，7 天 TTL）
+│   │   ├── retrieval_strategies.py # 检索策略实现（回溯/HyDE/子查询并行），独立函数抽取
+│   │   ├── llm_reranker.py        # LLM Listwise 重排序（关键查询二次精排）
 │   │   ├── prompts.py             # LangChain Prompt 模板（Few-shot + external_context + LLM Reranker）
 │   │   └── nli_guard.py           # HallucinationGuard — mDeBERTa-v3 NLI 逐句验证，SoftGate 旁路标记
 │   ├── edu_document_loaders/      # 自定义文档加载器（含 OCR）
-│   ├── edu_text_spliter/          # 文本分割器（递归/语义/Markdown，含自适应策略工厂）
+│   │   ├── edu_pdfloader.py       # PDF 加载器（PyMuPDF + OCR）
+│   │   ├── edu_docloader.py       # DOCX 加载器（段落/表格 + OCR）
+│   │   ├── edu_pptloader.py       # PPT/PPTX 加载器（文本框架/表格 + OCR）
+│   │   ├── edu_imgloader.py       # 纯图片 OCR 加载器
+│   │   └── edu_ocr.py             # OCR 引擎工具（RapidOCR Paddle/ONNX 自动选择）
+│   ├── edu_text_spliter/          # 文本分割器
+│   │   ├── edu_chinese_recursive_text_splitter.py  # 中文感知递归分割器
+│   │   ├── edu_model_text_spliter.py               # ModelScope BERT 语义分割器
+│   │   └── chunk_strategy.py      # 分割策略工厂（recursive/semantic/markdown）
 │   ├── rag_assesment/             # RAGAS 质量评估
 │   ├── eval/                      # 评估自动化管道
 │   │   ├── __init__.py
-│   │   └── eval_service.py        # EvalService（周期/手动/回归检测/趋势分析）
+│   │   ├── eval_service.py        # EvalService（周期/手动/回归检测/趋势分析）
+│   │   ├── ragas_runner.py        # RAGAS 评估集成（评估管线 + 指标计算）
+│   │   └── quality_reporter.py    # 质量报告（回归检测/趋势分析/状态概览）
 │   ├── classify_data/             # 分类器训练数据
 │   └── models/                    # 本地模型文件
 │       ├── bge-m3/                # BGE-M3 嵌入模型（稠密1024维 + 稀疏）
@@ -154,27 +178,34 @@ integrated_qa_system/
 │   ├── seed_default_tenant.py     # 一键建表 + 写入默认租户
 │   ├── import_jpkb_csv.py         # CSV 导入 jpkb 问答表（处理多行引号字段）
 │   ├── chunk_sweep.py             # Chunk 参数扫描工具
+│   ├── chunk_sweep_report.py      # Chunk 扫描报告生成
 │   ├── migrate_add_is_deleted.py  # 迁移脚本：conversations 表新增 is_deleted 字段
 │   └── migrate_add_chunk_config_snapshot.py  # 迁移脚本：eval_runs 表新增 chunk_config_snapshot 字段
 │
 ├── tests/                         # 测试
+│   ├── conftest.py                # Pytest 共享 fixture
 │   ├── test_document_quality.py   # 文档质量评估冒烟测试
 │   ├── test_strategy_cache.py     # 策略选择缓存测试
 │   ├── test_chunk_config.py       # 自适应 Chunk 配置单元/集成测试
+│   ├── test_chunk_strategy.py     # 分割策略工厂测试
 │   ├── test_hallucination_guard.py # HallucinationGuard 单元/集成测试
-│   ├── test_gpu_fp16.py           # GPU fp16 兼容性测试
-│   └── test_eval_pipeline.py      # 评估管道端到端测试
+│   ├── test_eval_api.py           # 评估 API 端点测试
+│   ├── test_eval_models.py        # 评估数据模型测试
+│   ├── test_eval_repository.py    # 评估数据访问层测试
+│   ├── test_eval_service_core.py  # 评估服务核心逻辑测试
+│   └── test_eval_service_ragas.py # 评估服务 RAGAS 集成测试
 │
 ├── static/                        # Web 前端
 │   ├── index.html                 # 单页应用（登录/注册 + 聊天界面 + 会话管理）
 │   └── src/App.jsx                # React JSX 组件
 │
-├── main.py                        # 主调度器（IntegratedQASystem + 降级编排）
-├── app.py                         # FastAPI 主入口（WebSocket + REST + 静态服务 + 健康端点）
+├── main.py                        # 主调度器（IntegratedQASystem + 组件初始化 + 降级编排）
+├── app.py                         # FastAPI 主入口（中间件注册 + 路由挂载 + 静态服务 + 启动事件）
 ├── use_api.py                     # 独立 SSE 流式客户端示例脚本
-├── config.ini                     # 全局配置文件
+├── config.ini                     # 全局配置文件（单一配置源）
+├── config.ini.example             # 配置文件模板（不含敏感信息）
 ├── pyproject.toml                 # 项目元数据与依赖（uv 管理）
-├── Dockerfile                     # Docker 多阶段构建（CPU 版本）
+├── Dockerfile                     # Docker 多阶段构建（纯 CPU）
 ├── .dockerignore                  # Docker 构建忽略规则
 ├── Makefile                       # 开发便利工具（lint/format/test/docker-*）
 ├── docker/
@@ -186,12 +217,10 @@ integrated_qa_system/
 ## 环境要求
 
 - **Python** ≥ 3.11, < 3.13
-- **uv**（Python 包管理器，推荐）
+- **uv**（Python 包管理器）
 - **MySQL** 5.7+（建议 8.0）
 - **Redis** 6.0+
 - **Milvus** 2.4+（建议使用 Milvus Standalone，依赖 etcd + MinIO）
-- **GPU**（可选，CUDA 12.6+，加速 BERT 分类器、BGE 嵌入、CrossEncoder 推理）
-- **CUDA**：PyTorch 使用 cu126 索引（`https://download.pytorch.org/whl/cu126`），内置 CUDA 12.6 运行时
 
 ## 安装
 
@@ -200,7 +229,7 @@ integrated_qa_system/
 git clone <repo-url>
 cd integrated_qa_system
 
-# 2. 安装依赖（uv 自动创建虚拟环境，自动从 cu126 索引安装 torch）
+# 2. 安装依赖（uv 自动创建虚拟环境）
 uv sync
 
 # 3. 下载本地模型（放到 rag_qa/models/ 目录）
@@ -274,20 +303,18 @@ docker run -p 8000:8000 \
 ### Docker 镜像说明
 
 - **多阶段构建**：builder 阶段编译依赖 → runtime 阶段仅复制 `.venv` + 源码，最小化镜像体积
-- **基础镜像**：`python:3.11-slim-bookworm`（CPU 版本），兼容 PaddlePaddle/OpenCV/PyTorch
+- **基础镜像**：`python:3.11-slim-bookworm`（纯 CPU），兼容 PaddlePaddle/OpenCV/PyTorch
 - **包管理器**：使用 `uv`（比 pip 快 10-100x），通过 `uv sync --frozen` 锁定依赖版本
 - **非 root 用户**：运行时以 `appuser` (UID 1000) 运行，增强安全性
 - **模型文件不入镜像**：`rag_qa/models/` 通过 volume 挂载（`models_data`），避免镜像膨胀（模型 ~5.5GB）
 - **健康检查**：复用应用自带的 `/health` 端点，Docker 自动监控容器健康状态
-- **环境变量覆盖**：docker-compose 通过环境变量将 `127.0.0.1` 覆盖为容器网络服务名（`mysql`/`redis`/`milvus`）
+- **单一配置源**：仅通过 `config.ini` 管理配置，docker-compose 通过环境变量覆盖容器网络服务名（`MYSQL_HOST`/`REDIS_HOST`/`MILVUS_HOST`）
 
-各服务密码通过环境变量（`MYSQL_PASSWORD`、`REDIS_PASSWORD`）或 `.env` 文件配置，默认值与 `config.ini` 一致。
+各服务密码通过 `config.ini` 配置，默认值与 Docker Compose 中环境变量保持一致。
 
 ## 配置
 
-### 方式一：config.ini（传统方式）
-
-编辑项目根目录下 `config.ini`：
+编辑项目根目录下 `config.ini`（可参考 `config.ini.example` 模板）：
 
 ```ini
 [mysql]
@@ -372,6 +399,8 @@ circuit_breaker_cooldown = 30      # 熔断器冷却时间（秒）
 [concurrency]
 max_concurrent_llm_calls = 10      # asyncio.Semaphore 并发 LLM 调用上限
 thread_pool_workers = 20           # ThreadPoolExecutor 工作线程数
+max_messages_per_connection = 50   # WebSocket 单连接时间窗口内最大消息数（0 = 不限制）
+ws_message_window_seconds = 60     # WebSocket 限流时间窗口（秒）
 
 [metrics]
 metrics_auth_user =                # /metrics 端点 Basic Auth 用户名（空=无认证）
@@ -411,33 +440,6 @@ log_max_bytes = 10485760           # 单个日志文件最大字节数（10 MB�
 log_backup_count = 5               # 滚动保留的日志文件数
 ```
 
-### 方式二：环境变量（12-Factor App，推荐生产环境）
-
-`base/settings.py` 使用 pydantic-settings 支持通过环境变量（或 `.env` 文件）覆盖所有关键配置，无需修改 `config.ini`：
-
-| 环境变量 | 对应配置 | 默认值 |
-|---------|---------|--------|
-| `MYSQL_HOST` | MySQL 地址 | `127.0.0.1` |
-| `MYSQL_USER` | MySQL 用户 | `root` |
-| `MYSQL_PASSWORD` | MySQL 密码 | (空) |
-| `MYSQL_DATABASE` | MySQL 数据库 | `subjects_kg` |
-| `REDIS_HOST` | Redis 地址 | `127.0.0.1` |
-| `REDIS_PORT` | Redis 端口 | `6379` |
-| `REDIS_PASSWORD` | Redis 密码 | (空) |
-| `MILVUS_HOST` | Milvus 地址 | `127.0.0.1` |
-| `MILVUS_PORT` | Milvus 端口 | `19530` |
-| `DEEPSEEK_API_KEY` | LLM API Key | (空) |
-| `DEEPSEEK_BASE_URL` | LLM API 地址 | `https://api.deepseek.com` |
-| `DEEPSEEK_MODEL` | LLM 模型名 | `deepseek-v4-pro` |
-| `JWT_SECRET_KEY` | JWT 签名密钥 | (空) |
-| `SECURITY_MODE` | 安全模式（`dev`/`prod`） | `dev` |
-| `CORS_ORIGINS` | CORS 允许来源（逗号分隔） | `http://localhost:3000,http://127.0.0.1:8000` |
-| `SECURE_HEADERS_ENABLED` | 安全响应头开关 | `true` |
-| `MAX_CONCURRENT_LLM_CALLS` | 并发 LLM 调用上限 | `10` |
-| `LOG_LEVEL` | 日志级别 | `INFO` |
-| `METRICS_AUTH_USER` / `METRICS_AUTH_PASSWORD` | `/metrics` Basic Auth | (空) |
-
-在 `SECURITY_MODE=prod` 模式下，`JWT_SECRET_KEY`、`MYSQL_PASSWORD`、`REDIS_PASSWORD`、`METRICS_AUTH_USER`、`METRICS_AUTH_PASSWORD` 必须通过环境变量设置，否则启动报错。
 
 ## 数据库初始化
 
@@ -671,9 +673,7 @@ git clone <repo-url>
 cd integrated_qa_system
 
 # 2. 配置环境变量（可选，也可使用 config.ini 默认值）
-#    创建 .env 文件，至少设置 DEEPSEEK_API_KEY 和 JWT_SECRET_KEY
-#    DEEPSEEK_API_KEY=<your-api-key>
-#    JWT_SECRET_KEY=<random-64-char-hex>
+#    编辑 config.ini，至少设置 [llm] dashscope_api_key 和 [auth] jwt_secret_key
 
 # 3. 构建镜像并启动全部服务（基础设施 + 应用）
 docker compose --profile dev up -d --build
@@ -695,8 +695,8 @@ curl http://localhost:8000/health
 uv sync
 
 # 2. 配置环境
-#    方式 A: 编辑 config.ini，填写 MySQL / Redis / Milvus 连接信息和 LLM API Key
-#    方式 B: 设置环境变量（DEEPSEEK_API_KEY、JWT_SECRET_KEY 等），见上方配置章节
+#    编辑 config.ini，填写 MySQL / Redis / Milvus 连接信息和 LLM API Key
+#    可参考 config.ini.example 模板文件
 
 # 3. 启动基础设施（二选一）
 #    方式 A: Docker Compose 一键启动 MySQL + Redis + Milvus
@@ -788,7 +788,7 @@ uv run python use_api.py
 | OCRPPTLoader | `.ppt` `.pptx` | 文本框架/表格提取 + 图片 OCR |
 | OCRIMGLoader | `.png` `.jpg` | 纯图片 OCR |
 
-OCR 引擎：优先使用 RapidOCR Paddle（GPU 加速），fallback 为 RapidOCR ONNX Runtime（CPU）。
+OCR 引擎：优先使用 RapidOCR Paddle，fallback 为 RapidOCR ONNX Runtime（CPU）。
 
 ### 文档质量评估 — 数据治理
 
@@ -881,10 +881,11 @@ LLM 调用失败时自动重试（`[retry]` 配置），延迟按指数增长：
 
 ### 并发控制
 
-系统通过两层机制控制并发，防止资源耗尽：
+系统通过三层机制控制并发，防止资源耗尽：
 
 - **asyncio.Semaphore**（`max_concurrent_llm_calls`，默认 10）：限制同时进行的 LLM 调用数，在 WebSocket 流式查询中生效。超过上限的请求自动排队等待
 - **ThreadPoolExecutor**（`thread_pool_workers`，默认 20）：工作线程池，用于 RAG 检索和 LLM 调用的同步→异步桥接
+- **WebSocket 逐消息限流**（`max_messages_per_connection` / `ws_message_window_seconds`，默认 50 条/60s）：本地计数器 + 滑动时间窗口，防止单连接消息轰炸。超出限制时返回 error 帧并关闭连接
 
 RAG 流式生成通过 `asyncio.Queue` 在线程池和 asyncio 事件循环之间传递 token，确保高并发下流式输出不阻塞。
 
@@ -1000,14 +1001,14 @@ LLM 流式生成完成
 
 HTTP 层指标（请求数、延迟等）由 `prometheus-fastapi-instrumentator` 自动采集。`/metrics` 端点支持可选的 Basic Auth 保护（`[metrics]` 配置节）。所有指标可直接接入 Grafana 仪表盘实现可视化监控。
 
-### 12-Factor App 配置管理
+### 单一配置源管理
 
-`base/settings.py` 使用 pydantic-settings 实现符合 12-Factor App 的配置管理：
+`base/config.py` 使用 Python 的 `configparser` 实现配置管理，`config.ini` 为唯一配置来源：
 
-- **双重配置源**：`config.ini` 提供完整默认值，环境变量 / `.env` 文件覆盖敏感配置
-- **启动验证**：`validate_config()` 在 FastAPI 启动时检查必填字段，`SECURITY_MODE=prod` 下强制敏感配置通过环境变量注入
-- **字段校验**：`valid_sources` 必须为合法 JSON 数组，`jwt_secret_key` / 数据库密码等在 production 模式下不可为空
-- **类型安全**：Pydantic 自动完成类型转换和验证，配置读取失败时明确报错而非静默
+- **单例模式**：`Config` 类全局唯一实例，所有模块通过 `Config()` 获取同一配置对象
+- **启动校验**：`Config.__init__()` 检查 `jwt_secret_key` 和 `dashscope_api_key` 必填字段，缺失时明确报错并提示参考 `config.ini.example`
+- **类型安全**：提供 `getint()`、`getfloat()`、`getboolean()` 类型化读取方法，避免字符串误用
+- **Docker 适配**：docker-compose 通过环境变量将容器网络服务名注入 `config.ini` 对应字段（`MYSQL_HOST`/`REDIS_HOST`/`MILVUS_HOST`），应用层无需感知容器编排
 
 ### 评估自动化管道
 
@@ -1127,9 +1128,13 @@ uv run pytest tests/test_chunk_config.py -v
 | `test_document_quality.py` | 文档质量评估冒烟测试 |
 | `test_strategy_cache.py` | 检索策略选择缓存测试 |
 | `test_chunk_config.py` | 自适应 Chunk 配置单元/集成测试 |
+| `test_chunk_strategy.py` | 分割策略工厂测试 |
 | `test_hallucination_guard.py` | HallucinationGuard NLI 幻觉检测单元/集成测试 |
-| `test_gpu_fp16.py` | GPU fp16 类型兼容性测试 |
-| `test_eval_pipeline.py` | 评估管道端到端测试 |
+| `test_eval_api.py` | 评估 API 端点测试 |
+| `test_eval_models.py` | 评估数据模型测试 |
+| `test_eval_repository.py` | 评估数据访问层测试 |
+| `test_eval_service_core.py` | 评估服务核心逻辑测试 |
+| `test_eval_service_ragas.py` | 评估服务 RAGAS 集成测试 |
 
 ## License
 
