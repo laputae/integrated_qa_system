@@ -13,13 +13,15 @@ except ImportError:
     Document = None
 
 # 导入 LlamaIndex 处理器
+from document_quality import (
+    estimate_document_quality,
+    LOW_QUALITY_THRESHOLD,
+)
 from llamaindex_processor import (
     LlamaIndexProcessor,
     load_documents_from_directory as llamaindex_load,
     process_documents as llamaindex_process,
     incremental_process_and_index as llamaindex_incremental,
-    estimate_document_quality,
-    LOW_QUALITY_THRESHOLD,
 )
 
 # 保持原有全局变量（如果其他模块引用）

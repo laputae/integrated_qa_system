@@ -11,10 +11,8 @@
 """
 
 import argparse
-import json
 import os
 import sys
-import time
 import uuid
 from datetime import datetime
 
@@ -27,28 +25,9 @@ sys.path.insert(0, os.path.join(_project_root, "rag_qa", "core"))
 
 from base import logger, Config
 from base.chunk_config import ChunkConfigManager
-
-
-# ================================================================
-# 候选配置定义
-# ================================================================
-
-SWEEP_CONFIGS_FULL = [
-    # (label, parent_chunk_size, child_chunk_size, chunk_overlap, strategy)
-    ("baseline",         1200, 300, 50,  "recursive"),
-    ("finer",            800,  200, 50,  "recursive"),
-    ("coarser",          1600, 400, 50,  "recursive"),
-    ("more-overlap",     1200, 300, 100, "recursive"),
-    ("less-overlap",     1200, 300, 20,  "recursive"),
-    ("large-parent",     2000, 500, 50,  "recursive"),
-    ("semantic-strategy", 1200, 300, 50,  "semantic"),
-]
-
-SWEEP_CONFIGS_FAST = [
-    ("baseline",    1200, 300, 50, "recursive"),
-    ("finer",       800,  200, 50, "recursive"),
-    ("coarser",     1600, 400, 50, "recursive"),
-]
+from scripts.chunk_sweep_report import (
+    SWEEP_CONFIGS_FULL, SWEEP_CONFIGS_FAST, print_report
+)
 
 
 def build_chunk_snapshot(label, parent, child, overlap, strategy):
@@ -196,108 +175,6 @@ def run_single_sweep(config_label, parent, child, overlap, strategy,
     }
 
 
-def print_report(results):
-    """输出 Markdown 格式的对比报告。"""
-    completed = [r for r in results if r["status"] == "completed"]
-    failed = [r for r in results if r["status"] != "completed"]
-
-    print("\n" + "=" * 80)
-    print("Chunk 参数扫描报告")
-    print("=" * 80)
-
-    if not completed:
-        print("\n无成功完成的评估运行。")
-        if failed:
-            print("\n失败项:")
-            for r in failed:
-                print(f"  - {r['config']['label']}: {r.get('error', 'unknown')}")
-        return
-
-    # 表头
-    header = (
-        f"{'配置':<22} {'faithfulness':>13} {'answer_rel':>11} "
-        f"{'ctx_precision':>13} {'ctx_recall':>11} {'耗时(s)':>8}"
-    )
-    print(f"\n{header}")
-    print("-" * len(header))
-
-    # 按 faithfulness 降序排列
-    completed.sort(
-        key=lambda r: r["metrics"].get("faithfulness") or 0,
-        reverse=True,
-    )
-
-    best = completed[0]
-    baseline = next((r for r in completed if r["config"]["label"] == "baseline"), None)
-
-    for r in completed:
-        m = r["metrics"]
-        label = r["config"]["label"]
-        marker = " <-- BEST" if r is best else ""
-        if r is baseline and r is not best:
-            marker = " (baseline)"
-
-        print(
-            f"{label:<22} "
-            f"{m.get('faithfulness'):>13.4f} "
-            f"{m.get('answer_relevancy'):>11.4f} "
-            f"{m.get('context_precision'):>13.4f} "
-            f"{m.get('context_recall'):>11.4f} "
-            f"{r['elapsed_seconds']:>7.1f}s"
-            f"{marker}"
-        )
-
-    # 与 baseline 的对比
-    if baseline and baseline is not best:
-        print(f"\n--- 相对 baseline 改善 ---")
-        bm = baseline["metrics"]
-        for r in completed:
-            if r is baseline:
-                continue
-            m = r["metrics"]
-            deltas = []
-            for metric in ["faithfulness", "answer_relevancy",
-                           "context_precision", "context_recall"]:
-                if bm.get(metric) and m.get(metric):
-                    delta = m[metric] - bm[metric]
-                    sign = "+" if delta >= 0 else ""
-                    deltas.append(f"{metric}: {sign}{delta:.4f}")
-            if deltas:
-                print(f"  {r['config']['label']:<20} {', '.join(deltas)}")
-
-    if failed:
-        print(f"\n--- 失败 ({len(failed)}) ---")
-        for r in failed:
-            print(f"  {r['config']['label']}: {r.get('error', 'unknown')}")
-
-    # 配置详情
-    print(f"\n--- 配置详情 ---")
-    for r in completed:
-        c = r["config"]
-        print(
-            f"  {c['label']:<20} "
-            f"parent={c['parent_chunk_size']} "
-            f"child={c['child_chunk_size']} "
-            f"overlap={c['chunk_overlap']} "
-            f"strategy={c['strategy']}"
-        )
-
-    print("\n" + "=" * 80)
-
-    # 保存 JSON 报告
-    report_path = os.path.join(_project_root, "logs", "chunk_sweep_report.json")
-    os.makedirs(os.path.dirname(report_path), exist_ok=True)
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "generated_at": datetime.now().isoformat(),
-                "results": results,
-            },
-            f, ensure_ascii=False, indent=2,
-        )
-    print(f"JSON 报告已保存: {report_path}")
-
-
 def main():
     parser = argparse.ArgumentParser(description="离线 Chunk 参数扫描工具")
     parser.add_argument(
@@ -387,7 +264,7 @@ def main():
               f"faithfulness={result['metrics'].get('faithfulness')}, "
               f"{result['elapsed_seconds']:.1f}s)\n")
 
-    print_report(results)
+    print_report(results, project_root=_project_root)
 
 
 if __name__ == "__main__":
