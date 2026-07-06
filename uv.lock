@@ -1186,7 +1186,11 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "openai", specifier = ">=2.41.0" },
     { name = "opencv-python", specifier = ">=4.13.0.92" },
+<<<<<<< HEAD
     { name = "paddlepaddle", specifier = ">=3.0.0" },
+=======
+    { name = "paddlepaddle", specifier = ">=3.1.1" },
+>>>>>>> 8e12bf6 (refactor: 切换为纯CPU依赖，修复循环导入及OCR兼容性)
     { name = "pandas", specifier = ">=3.0.3" },
     { name = "pandas-stubs", specifier = ">=3.0.3.260530" },
     { name = "pillow", specifier = ">=12.2.0" },

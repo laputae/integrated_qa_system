@@ -55,7 +55,7 @@ dependencies = [
     "prometheus-client>=0.23.0",
     "prometheus-fastapi-instrumentator>=7.1.0",
     "jose>=1.0.0",
-    "paddlepaddle>=3.0.0",
+    "paddlepaddle>=3.1.1",
 ]
 
 
