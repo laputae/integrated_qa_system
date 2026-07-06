@@ -426,10 +426,16 @@ class IntegratedQASystem:
     def _degraded_rag_retrieve(self, query, source_filter=None) -> str:
         """Level 3 degraded retrieval: return raw context without LLM summarization."""
         try:
-            strategy = self.rag_system.strategy_selector.select_strategy(query)
+            # 降级路径不调 LLM 做策略选择，直接检索
             docs = self.rag_system.retrieve_and_merge(
-                query, source_filter=source_filter, strategy=strategy
+                query, source_filter=source_filter, strategy="direct"
             )
+            # 无 LLM 检索重试链：放宽 source_filter 再试一次
+            if not docs and source_filter:
+                self.logger.info(f"直接检索无结果，去掉 source_filter 重试 (查询: '{query}')")
+                docs = self.rag_system.retrieve_and_merge(
+                    query, source_filter=None, strategy="direct"
+                )
             if docs:
                 context = "\n\n".join([doc.page_content for doc in docs])
                 return (
