@@ -1,23 +1,9 @@
-# 导入 BM25 算法
-from rank_bm25 import BM25Okapi
-# 导入数值计算库
 import numpy as np
-# 导入文本预处理
-# 导入配置和日志
-import sys, os
-# 获取当前文件所在目录的绝对路径
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# print(f'current_dir--》{current_dir}')
-module_dir = os.path.dirname(current_dir)
-# print(f'module_dir--》{module_dir}')
-sys.path.insert(0, module_dir)
-project_root = os.path.dirname(module_dir)
-sys.path.insert(0, project_root)
+from rank_bm25 import BM25Okapi
 
-from utils.preprocess import preprocess_text
-from db.mysql_client import MySQLClient
-from cache.redis_client import RedisClient
-# 导入日志
+from ..cache.redis_client import RedisClient
+from ..db.mysql_client import MySQLClient
+from ..utils.preprocess import preprocess_text
 from base import logger
 
 
@@ -91,7 +77,7 @@ class BM25Search:
         try:
             # 分词
             query_tokens = preprocess_text(query)
-            # 计算🧑bm25的分数
+            # 计算bm25的分数
             scores = self.bm25.get_scores(query_tokens)
             # print(f'scores--》{scores}')
             # 进行分数的归一化
@@ -128,5 +114,3 @@ if __name__ == "__main__":
     mysql_client = MySQLClient()
     bm25_search = BM25Search(redis_client, mysql_client)
     bm25_search.search(query="VMware安装VMware时显示灰色如何解决")
-
-
