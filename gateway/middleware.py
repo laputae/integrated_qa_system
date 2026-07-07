@@ -53,6 +53,10 @@ class GatewayMiddleware(BaseHTTPMiddleware):
         RequestContext.set(request_id=request_id)
         start_time = time.time()
 
+        # POST 请求体重构时会创建新的 scope 副本，但内层 ASGI app 收到的
+        # 是原始 scope — 保留引用，确保 current_user 写入原始 scope。
+        _scope = request.scope
+
         # ---- Layer 1: SecurityFilter (all requests) ----
         if path.startswith("/api/"):
             body_bytes = None
@@ -167,12 +171,14 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                 payload = decode_access_token(token)
                 # Inject user info into request scope for downstream
                 tenant_id = payload.get("tenant_id", 0)
-                request.scope["current_user"] = {
+                user_ctx = {
                     "user_id": payload["user_id"],
                     "username": payload["username"],
                     "tenant_id": tenant_id,
                     "jti": jti,
                 }
+                request.scope["current_user"] = user_ctx
+                _scope["current_user"] = user_ctx
                 RequestContext.set(
                     user_id=payload["user_id"], tenant_id=tenant_id
                 )
