@@ -132,49 +132,13 @@ def validate_document_format(documents: list) -> bool:
     return True
 
 
-def check_dependencies():
-    """检查项目依赖是否完整"""
-    print("\n" + "="*50)
-    print("📦 依赖检查")
-    print("="*50)
-
-    dependencies = [
-        ('llama_index.core', 'LlamaIndex 核心模块'),
-        ('llama_index.vector_stores.milvus', 'Milvus 向量存储'),
-        ('llama_index.embeddings.huggingface', 'HuggingFace 嵌入'),
-        ('pymilvus', 'Milvus Python SDK'),
-        ('langchain_core', 'LangChain 核心'),
-        ('torch', 'PyTorch'),
-    ]
-
-    missing_deps = []
-    for module, description in dependencies:
-        try:
-            __import__(module)
-            print(f"✓ {description}")
-        except ImportError as e:
-            print(f"❌ {description}: {e}")
-            missing_deps.append(module)
-
-    if missing_deps:
-        print(f"\n⚠️ 缺少依赖: {', '.join(missing_deps)}")
-        print("请运行: uv sync")
-        return False
-    else:
-        print("\n✅ 所有依赖检查通过")
-        return True
-
 
 # 保持原有入口（如果有脚本直接运行）
 if __name__ == '__main__':
     print("🚀 文档处理器验证测试")
     print("="*50)
 
-    # 1. 依赖检查
-    if not check_dependencies():
-        exit(1)
-
-    # 2. 加载和处理文档
+    # 1. 加载和处理文档
     print("\n📄 开始处理文档...")
     directory_path = 'D:\\PythonProjects\\integrated_qa_system\\rag_qa\\data\\ai_data'
 
@@ -194,11 +158,11 @@ if __name__ == '__main__':
         child_chunks = process_documents(directory_path)
         print(f"生成子块数量: {len(child_chunks)}")
 
-        # 3. 格式验证
+        # 2. 格式验证
         print("\n--- 格式验证 ---")
         validate_document_format(child_chunks)
 
-        # 4. 打印第一个文档示例
+        # 3. 打印第一个文档示例
         if child_chunks:
             print("\n--- 文档示例 ---")
             first_chunk = child_chunks[0]
