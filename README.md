@@ -1127,7 +1127,8 @@ uv run pytest tests/test_chunk_config.py -v
 
 ## License
 
-待定
+版权声明
+本项目代码仅供个人学习参考，**未经书面许可禁止任何形式的复制、修改或分发**。
 
 ## 致谢
 
