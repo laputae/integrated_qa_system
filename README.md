@@ -201,7 +201,6 @@ integrated_qa_system/
 │
 ├── main.py                        # 主调度器（IntegratedQASystem + 组件初始化 + 降级编排）
 ├── app.py                         # FastAPI 主入口（中间件注册 + 路由挂载 + 静态服务 + 启动事件）
-├── use_api.py                     # 独立 SSE 流式客户端示例脚本
 ├── config.ini                     # 全局配置文件（单一配置源）
 ├── config.ini.example             # 配置文件模板（不含敏感信息）
 ├── pyproject.toml                 # 项目元数据与依赖（uv 管理）
@@ -764,16 +763,6 @@ uv run python main.py               # 集成问答（BM25 + RAG + 对话历史�
 uv run python mysql_qa/main.py     # MySQL BM25 独立问答
 uv run python rag_qa/rag_main.py   # RAG 独立问答
 ```
-
-### 方式三：SSE 流式客户端（Python）
-
-项目提供了 `use_api.py` 作为独立 SSE 流式客户端示例：
-
-```bash
-uv run python use_api.py
-```
-
-该脚本演示了如何通过 HTTP 流式请求调用问答 API，支持自定义问题、学科过滤和会话管理。
 
 ## 核心技术说明
 

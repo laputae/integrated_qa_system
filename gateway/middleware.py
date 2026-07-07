@@ -1,4 +1,3 @@
-import json
 import time
 import uuid
 from typing import Optional
@@ -10,8 +9,8 @@ from starlette.responses import JSONResponse, Response
 from base import RequestContext, logger
 from gateway.audit import AuditEventType, get_audit_logger
 from gateway.rate_limiter import RateLimiter
-from mysql_qa import get_redis_client
 from gateway.security import SecurityFilter
+from mysql_qa import get_redis_client
 
 AUTH_WHITELIST = {
     "/api/auth/login",
