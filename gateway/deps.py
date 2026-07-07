@@ -4,35 +4,17 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from gateway.auth import decode_access_token
+from gateway.auth_whitelist import is_whitelisted
 from mysql_qa import get_redis_client
 
-AUTH_WHITELIST = {
-    "/api/auth/login",
-    "/api/auth/register",
-    "/api/auth/refresh",
-    "/health",
-    "/",
-    "/docs",
-    "/openapi.json",
-    "/api/sources",
-}
-
 security_scheme = HTTPBearer(auto_error=False)
-
-
-def _is_whitelisted(path: str) -> bool:
-    if path in AUTH_WHITELIST:
-        return True
-    if path.startswith("/static"):
-        return True
-    return False
 
 
 async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
 ) -> dict:
-    if _is_whitelisted(request.url.path):
+    if is_whitelisted(request.url.path):
         return {"user_id": 0, "username": "anonymous", "tenant_id": 0}
 
     if credentials is None:

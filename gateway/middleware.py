@@ -9,21 +9,9 @@ from starlette.responses import JSONResponse, Response
 from base import RequestContext, logger
 from gateway.audit import AuditEventType, get_audit_logger
 from gateway.rate_limiter import RateLimiter
+from gateway.auth_whitelist import is_whitelisted
 from gateway.security import SecurityFilter
 from mysql_qa import get_redis_client
-
-AUTH_WHITELIST = {
-    "/api/auth/login",
-    "/api/auth/register",
-    "/api/auth/refresh",
-    "/health",
-    "/ready",
-    "/status",
-    "/",
-    "/docs",
-    "/openapi.json",
-    "/api/sources",
-}
 
 # Paths that should skip SQL injection scanning (parameterized queries only)
 _SKIP_SQL_SCAN_PATHS = {"/api/query", "/api/stream"}
@@ -35,14 +23,6 @@ def _get_client_ip(request: Request) -> str:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
-
-
-def _is_whitelisted(path: str) -> bool:
-    if path in AUTH_WHITELIST:
-        return True
-    if path.startswith("/static"):
-        return True
-    return False
 
 
 class GatewayMiddleware(BaseHTTPMiddleware):
@@ -101,7 +81,6 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                         )
                     # Reconstruct request body for downstream
                     from starlette.requests import Request as StarletteRequest
-                    from starlette.datastructures import Headers
 
                     async def receive():
                         return {"type": "http.request", "body": body_bytes}
@@ -121,7 +100,7 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                 metrics_auth_user = config.METRICS_AUTH_USER
                 self._metrics_auth_user = metrics_auth_user
                 self._metrics_auth_password = config.METRICS_AUTH_PASSWORD
-            if not self._metrics_auth_user or not self._metrics_auth_password:
+            if not (self._metrics_auth_user and self._metrics_auth_password):
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "Metrics endpoint not configured: set METRICS_AUTH_USER and METRICS_AUTH_PASSWORD"},
@@ -164,7 +143,7 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                 )
 
         # ---- Layer 3: AuthMiddleware — JWT check for non-whitelisted paths ----
-        if path.startswith("/api/") and not _is_whitelisted(path):
+        if path.startswith("/api/") and not is_whitelisted(path):
             from gateway.auth import decode_access_token, get_token_jti
             auth_header = request.headers.get("Authorization", "")
             if not auth_header.startswith("Bearer "):
