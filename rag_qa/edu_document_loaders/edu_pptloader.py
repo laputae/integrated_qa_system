@@ -2,12 +2,13 @@ from collections.abc import Iterator
 from io import BytesIO
 
 import numpy as np
-from .edu_ocr import get_ocr
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 from PIL import Image
 from pptx import Presentation
 from tqdm import tqdm
+
+from .edu_ocr import get_ocr
 
 
 class OCRPPTLoader(BaseLoader):

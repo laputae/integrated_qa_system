@@ -9,13 +9,14 @@ from docx.oxml.table import CT_Tbl  # 用于处理表格XML结构
 from docx.oxml.text.paragraph import CT_P  # 用于处理段落XML结构
 from docx.table import Table, _Cell  # 用于处理表格
 from docx.text.paragraph import Paragraph  # 用于处理段落内容
-from .edu_ocr import get_ocr
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 from PIL import Image  # 用于处理图片
 
 # 导入必要的模块
 from tqdm import tqdm
+
+from .edu_ocr import get_ocr
 
 
 class OCRDOCLoader(BaseLoader):

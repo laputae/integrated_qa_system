@@ -4,13 +4,19 @@ RAGAS evaluation integration helpers.
 Extracted from eval_service.py to keep each module under 300 lines.
 Standalone functions that take dependencies as explicit parameters.
 """
+from __future__ import annotations
+
 import json
 import sys
 import types
+from typing import TYPE_CHECKING
 
 from openai import OpenAI
 
 from base import Config, logger
+
+if TYPE_CHECKING:
+    from datasets import Dataset
 
 
 def ensure_ragas_importable():
@@ -32,7 +38,7 @@ def ensure_ragas_importable():
         chat_models_module.vertexai = vertexai_module
 
 
-def prepare_ragas_dataset(results: list) -> "Dataset":
+def prepare_ragas_dataset(results: list) -> Dataset:
     """Convert eval results to a RAGAS-compatible Dataset."""
     from datasets import Dataset
 
@@ -86,7 +92,7 @@ def create_langchain_embeddings(config: Config):
     return embedding_factory("openai", model=model, client=client)
 
 
-def run_ragas(dataset: "Dataset", config: Config, log=None) -> dict:
+def run_ragas(dataset: Dataset, config: Config, log=None) -> dict:
     """Run RAGAS evaluation metrics on a dataset."""
     if log is None:
         log = logger

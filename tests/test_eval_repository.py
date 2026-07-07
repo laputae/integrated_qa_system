@@ -72,8 +72,14 @@ class TestEvalRepositoryRun:
 
     def test_get_recent_metrics(self, eval_repo, mock_session_factory):
         _, mock_session = mock_session_factory
-        mock_session.query.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = \
-            [(0.9,), (0.85,), (0.88,)]
+        (
+            mock_session.query.return_value
+            .filter.return_value
+            .filter.return_value
+            .order_by.return_value
+            .limit.return_value
+            .all.return_value
+        ) = [(0.9,), (0.85,), (0.88,)]
         values = eval_repo.get_recent_metrics("faithfulness", limit=3)
         assert values == [0.9, 0.85, 0.88]
 
@@ -119,7 +125,11 @@ class TestEvalRepositoryResult:
 
     def test_get_result_ids_for_run(self, eval_repo, mock_session_factory):
         _, mock_session = mock_session_factory
-        mock_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = \
-            [(1,), (2,), (3,)]
+        (
+            mock_session.query.return_value
+            .filter.return_value
+            .order_by.return_value
+            .all.return_value
+        ) = [(1,), (2,), (3,)]
         ids = eval_repo.get_result_ids_for_run(run_id=1)
         assert ids == [1, 2, 3]

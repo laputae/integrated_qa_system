@@ -30,7 +30,7 @@ class ConversationRepository:
                     Conversation.session_id == session_id,
                     Conversation.user_id == user_id,
                     Conversation.tenant_id == tenant_id,
-                    Conversation.is_deleted == False,
+                    Conversation.is_deleted == False,  # noqa: E712
                 ))
                 .order_by(desc(Conversation.timestamp))
                 .limit(limit)
@@ -48,7 +48,7 @@ class ConversationRepository:
                     Conversation.session_id == session_id,
                     Conversation.user_id == user_id,
                     Conversation.tenant_id == tenant_id,
-                    Conversation.is_deleted == False,
+                    Conversation.is_deleted == False,  # noqa: E712
                 ))
                 .order_by(Conversation.timestamp)
                 .all()
@@ -81,7 +81,7 @@ class ConversationRepository:
                     Conversation.session_id == session_id,
                     Conversation.user_id == user_id,
                     Conversation.tenant_id == tenant_id,
-                    Conversation.is_deleted == False,
+                    Conversation.is_deleted == False,  # noqa: E712
                 ))
                 .order_by(desc(Conversation.timestamp))
                 .limit(keep)
@@ -106,7 +106,7 @@ class ConversationRepository:
                 .filter(and_(
                     Conversation.user_id == user_id,
                     Conversation.tenant_id == tenant_id,
-                    Conversation.is_deleted == False,
+                    Conversation.is_deleted == False,  # noqa: E712
                 ))
                 .group_by(Conversation.session_id)
                 .order_by(func.max(Conversation.timestamp).desc())
