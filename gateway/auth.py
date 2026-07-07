@@ -1,6 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from jose import JWTError, jwt
@@ -24,7 +23,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(user_id: int, username: str, tenant_id: int) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": str(user_id),
@@ -40,7 +39,7 @@ def create_access_token(user_id: int, username: str, tenant_id: int) -> str:
 
 
 def create_refresh_token(user_id: int, username: str, tenant_id: int) -> tuple[str, str, datetime]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     jti = str(uuid.uuid4())
     payload = {
@@ -71,7 +70,7 @@ def decode_refresh_token(token: str) -> dict:
     return payload
 
 
-def get_token_jti(token: str) -> Optional[str]:
+def get_token_jti(token: str) -> str | None:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("jti")
@@ -82,5 +81,5 @@ def get_token_jti(token: str) -> Optional[str]:
 def get_token_ttl(token: str) -> int:
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     exp = payload.get("exp", 0)
-    now = datetime.now(timezone.utc).timestamp()
+    now = datetime.now(UTC).timestamp()
     return max(0, int(exp - now))

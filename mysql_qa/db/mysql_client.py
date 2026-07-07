@@ -1,12 +1,3 @@
-# -*- coding:utf-8 -*-
-import sys
-import os
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-module_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(module_dir)
-sys.path.insert(0, project_root)
-
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 

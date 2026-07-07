@@ -1,11 +1,12 @@
-from typing import Iterator
-from edu_ocr import get_ocr
-from langchain_core.documents import Document
-from langchain_core.document_loaders import BaseLoader
-from pptx import Presentation
-from PIL import Image
-import numpy as np
+from collections.abc import Iterator
 from io import BytesIO
+
+import numpy as np
+from .edu_ocr import get_ocr
+from langchain_core.document_loaders import BaseLoader
+from langchain_core.documents import Document
+from PIL import Image
+from pptx import Presentation
 from tqdm import tqdm
 
 
@@ -85,7 +86,7 @@ class OCRPPTLoader(BaseLoader):
         # 遍历所有幻灯片
         for slide_number, slide in enumerate(prs.slides, start=1):
             # 更新进度条描述，显示当前处理的幻灯片索引
-            b_unit.set_description("OCRPPTLoader slide index: {}".format(slide_number))
+            b_unit.set_description(f"OCRPPTLoader slide index: {slide_number}")
             b_unit.refresh()  # 刷新进度条显示
 
             # 按照从上到下、从左到右的顺序对形状进行排序遍历

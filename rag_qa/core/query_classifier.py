@@ -1,28 +1,18 @@
 # -*- coding:utf-8-*-
-# 导入标准库
 import json
 import os
-# 导入 PyTorch
-import torch
-import sys
-# 获取当前文件所在目录的绝对路径
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# print(f'current_dir--》{current_dir}')
-# 获取core文件所在的目录的绝对路径
-rag_qa_path = os.path.dirname(current_dir)
-# 获取根目录文件所在的绝对位置
-project_root = os.path.dirname(rag_qa_path)
-sys.path.insert(0, project_root)
-# 导入日志
-from base import logger
-# 导入numpy
+
 import numpy as np
-# 导入 Transformers 库
-from transformers import BertTokenizer, BertForSequenceClassification
-from transformers import Trainer, TrainingArguments
-# 导入train_test_split
-from sklearn.model_selection import train_test_split
+import torch
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
+from transformers import BertForSequenceClassification, BertTokenizer, Trainer, TrainingArguments
+
+from base import logger
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+rag_qa_path = os.path.dirname(current_dir)
+
 
 class QueryClassifier:
     def __init__(self, model_path="bert_query_classifier"):
@@ -76,7 +66,7 @@ class QueryClassifier:
             logger.error(f"数据集文件 {data_file} 不存在")
             raise FileNotFoundError(f"数据集文件 {data_file} 不存在")
 
-        with open(data_file, "r", encoding="utf-8") as f:
+        with open(data_file, encoding="utf-8") as f:
             # print(f'f.readlines()--》{f.readlines()}')
             data = [json.loads(value) for value in f.readlines()]
             # print(f'data--》{data}')

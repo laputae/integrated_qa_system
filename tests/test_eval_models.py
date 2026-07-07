@@ -1,5 +1,4 @@
 """评估自动化管道 — ORM Model Tests"""
-import pytest
 
 
 class TestEvalRunModel:

@@ -1,4 +1,3 @@
-# -*- coding:utf-8 -*-
 """
 Prometheus metrics for the integrated QA system.
 
@@ -9,7 +8,7 @@ HTTP-level metrics (http_requests_total, http_request_duration_seconds)
 are handled automatically by prometheus-fastapi-instrumentator in app.py.
 """
 
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
 # ---- Business query metrics ----
 

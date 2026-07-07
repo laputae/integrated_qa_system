@@ -63,8 +63,8 @@ def eval_repo(mock_session_factory):
 @pytest.fixture
 def test_app():
     """Create a FastAPI TestClient with a mocked qa_system."""
-    from app import app as fastapi_app
     import app as app_module
+    from app import app as fastapi_app
 
     original_qa = app_module.qa_system
 

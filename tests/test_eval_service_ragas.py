@@ -1,20 +1,20 @@
 """评估自动化管道 — RAGAS integration tests"""
 import json
-from unittest.mock import MagicMock
 
 
 class TestEvalServiceEnsureRagas:
     def test_ensure_ragas_importable(self):
-        from rag_qa.eval.ragas_runner import ensure_ragas_importable
         import sys
+
+        from rag_qa.eval.ragas_runner import ensure_ragas_importable
         ensure_ragas_importable()
         assert "langchain_community.chat_models.vertexai" in sys.modules
 
 
 class TestEvalServicePrepareRagasDataset:
     def test_prepare_with_valid_contexts(self):
-        from rag_qa.eval.ragas_runner import prepare_ragas_dataset
         from db_models.eval_result import EvalResult
+        from rag_qa.eval.ragas_runner import prepare_ragas_dataset
 
         results = [
             EvalResult(id=1, run_id=1, question="Q1", ground_truth="A1",
@@ -29,8 +29,8 @@ class TestEvalServicePrepareRagasDataset:
         assert dataset["contexts"][0] == ["ctx1", "ctx2"]
 
     def test_prepare_with_none_contexts(self):
-        from rag_qa.eval.ragas_runner import prepare_ragas_dataset
         from db_models.eval_result import EvalResult
+        from rag_qa.eval.ragas_runner import prepare_ragas_dataset
 
         results = [
             EvalResult(id=1, run_id=1, question="Q1", ground_truth="A1",
@@ -40,8 +40,8 @@ class TestEvalServicePrepareRagasDataset:
         assert dataset["contexts"][0] == []
 
     def test_prepare_with_none_answer(self):
-        from rag_qa.eval.ragas_runner import prepare_ragas_dataset
         from db_models.eval_result import EvalResult
+        from rag_qa.eval.ragas_runner import prepare_ragas_dataset
 
         results = [
             EvalResult(id=1, run_id=1, question="Q1", ground_truth="A1",

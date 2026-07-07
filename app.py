@@ -1,19 +1,20 @@
+import asyncio
+import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import os
-import asyncio
-
-from main import IntegratedQASystem
-from base import logger
 from prometheus_fastapi_instrumentator import Instrumentator
+
+from base import logger
 from gateway.middleware import GatewayMiddleware
 from gateway.security_headers import SecurityHeadersMiddleware
+from main import IntegratedQASystem
 from routers.v1.auth import router as auth_router
-from routers.v1.routes import router as routes_router
-from routers.v1.eval_routes import router as eval_router
 from routers.v1.chunk_config_routes import router as chunk_config_router
+from routers.v1.eval_routes import router as eval_router
+from routers.v1.routes import router as routes_router
 from routers.v1.ws import router as ws_router
 
 qa_system = IntegratedQASystem()

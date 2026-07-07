@@ -1,10 +1,11 @@
 import numpy as np
 from rank_bm25 import BM25Okapi
 
+from base import logger
+
 from ..cache.redis_client import RedisClient
 from ..db.mysql_client import MySQLClient
 from ..utils.preprocess import preprocess_text
-from base import logger
 
 
 class BM25Search:

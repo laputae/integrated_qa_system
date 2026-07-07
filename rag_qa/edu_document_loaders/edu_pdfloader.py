@@ -1,13 +1,14 @@
+from collections.abc import Iterator
+
 import cv2
 import fitz  # pyMuPDF里面的fitz包，不要与pip install fitz混淆
 import numpy as np
+from .edu_ocr import get_ocr
+from langchain_core.document_loaders import BaseLoader
+from langchain_core.documents import Document
 from PIL import Image
 from tqdm import tqdm
-from typing import Iterator
-from edu_ocr import get_ocr
-from langchain_core.documents import Document
-from langchain_core.document_loaders import BaseLoader
-from langchain_text_splitters import CharacterTextSplitter
+
 # PDF OCR 控制：只对宽高超过页面一定比例（图片宽/页面宽，图片高/页面高）的图片进行 OCR。
 # 这样可以避免 PDF 中一些小图片的干扰，提高非扫描版 PDF 处理速度
 PDF_OCR_THRESHOLD = (0.6, 0.6)
@@ -46,7 +47,7 @@ class OCRPDFLoader(BaseLoader):
         resp = ""
         b_unit = tqdm(total=doc.page_count, desc="OCRPDFLoader context page index: 0")
         for i, page in enumerate(doc):
-            b_unit.set_description("OCRPDFLoader context page index: {}".format(i))
+            b_unit.set_description(f"OCRPDFLoader context page index: {i}")
             b_unit.refresh()
             # 提取文本：默认使用 "text" 模式提取文本。
             # text = page.get_text("")

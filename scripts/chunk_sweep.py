@@ -20,14 +20,10 @@ from datetime import datetime
 _script_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_script_dir)
 sys.path.insert(0, _project_root)
-sys.path.insert(0, os.path.join(_project_root, "rag_qa"))
-sys.path.insert(0, os.path.join(_project_root, "rag_qa", "core"))
 
-from base import logger, Config
-from base.chunk_config import ChunkConfigManager
-from scripts.chunk_sweep_report import (
-    SWEEP_CONFIGS_FULL, SWEEP_CONFIGS_FAST, print_report
-)
+from base import Config, logger  # noqa: E402
+from base.chunk_config import ChunkConfigManager  # noqa: E402
+from scripts.chunk_sweep_report import SWEEP_CONFIGS_FAST, SWEEP_CONFIGS_FULL, print_report  # noqa: E402
 
 
 def build_chunk_snapshot(label, parent, child, overlap, strategy):
@@ -73,7 +69,7 @@ def drop_collection(client, collection_name):
 
 def reindex_documents(data_dir, parent, child, overlap):
     """用当前 chunk 参数重新处理文档，返回子块列表。"""
-    from llamaindex_processor import process_documents
+    from rag_qa.core.llamaindex_processor import process_documents
     chunks = process_documents(data_dir, parent, child, overlap)
     logger.info("重新索引完成: %s 个子块", len(chunks))
     return chunks
@@ -82,11 +78,12 @@ def reindex_documents(data_dir, parent, child, overlap):
 def run_single_sweep(config_label, parent, child, overlap, strategy,
                      data_dir, conf, sweep_collection_name):
     """运行单组配置的完整评估流程。"""
-    from rag_qa.core.vector_store import VectorStore
-    from rag_qa.core.rag_system import RAGSystem
-    from repositories.eval_repo import EvalRepository
-    from rag_qa.eval.eval_service import EvalService
     from openai import OpenAI
+
+    from rag_qa.core.rag_system import RAGSystem
+    from rag_qa.core.vector_store import VectorStore
+    from rag_qa.eval.eval_service import EvalService
+    from repositories.eval_repo import EvalRepository
 
     # 1. 更新 runtime chunk 配置
     update_chunk_config(parent, child, overlap, strategy)

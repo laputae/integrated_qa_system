@@ -1,31 +1,21 @@
-# -*- coding:utf-8 -*-
-# 导入 Milvus 相关类，用于操作向量数据库
-from pymilvus import MilvusClient, DataType, AnnSearchRequest, WeightedRanker
-# 导入 Document 类，用于创建文档对象
-from langchain_core.documents import Document
-# 导入 CrossEncoder，用于重排序和 NLI 判断
-from sentence_transformers import CrossEncoder
-# 导入 hashlib 模块，用于生成唯一 ID 的哈希值
 import hashlib
-import sys, os, time
+import os
+import time
+
 import torch
-# 获取当前文件所在目录的绝对路径
+from langchain_core.documents import Document
+from pymilvus import AnnSearchRequest, DataType, MilvusClient, WeightedRanker
+from sentence_transformers import CrossEncoder
+
+from base import Config, logger
+from base.metrics import qa_rag_retrieval_latency_seconds
+
+from .document_processor import *
+from .embedding_cache import get_query_embedding_cached
+from .embedding_registry import batch_embed, create_milvus_model, get_dense_dim, supports_sparse
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 rag_qa_path = os.path.dirname(current_dir)
-core_path = os.path.join(rag_qa_path, 'core')
-sys.path.insert(0, core_path)
-sys.path.insert(0, rag_qa_path)
-# 获取根目录文件所在的绝对位置
-project_root = os.path.dirname(rag_qa_path)
-sys.path.insert(0, project_root)
-from document_processor import *
-from base import logger, Config
-from base.metrics import qa_rag_retrieval_latency_seconds
-from embedding_registry import (
-    create_milvus_model, get_dense_dim, supports_sparse, batch_embed
-)
-from embedding_cache import get_query_embedding_cached
-
 
 conf = Config()
 

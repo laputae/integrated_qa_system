@@ -3,12 +3,12 @@ LLM listwise reranker for RAG document ranking.
 
 Extracted from rag_system.py to keep each module under 300 lines.
 """
-import re
 import json
+import re
 import time
 
 from base import logger
-from base.metrics import qa_llm_rerank_total, qa_llm_rerank_latency_seconds
+from base.metrics import qa_llm_rerank_latency_seconds, qa_llm_rerank_total
 
 
 def rerank_with_llm(llm_callable, query: str, docs: list, config) -> list:

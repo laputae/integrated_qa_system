@@ -1,14 +1,15 @@
-import re
-from typing import List, Optional, Any
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 import logging
+import re
+from typing import Any
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
 
 
 def _split_text_with_regex_from_end(
         text: str, separator: str, keep_separator: bool
-) -> List[str]:
+) -> list[str]:
     # Now that we have the separator, split the text
     if separator:
         if keep_separator:
@@ -28,7 +29,7 @@ def _split_text_with_regex_from_end(
 class ChineseRecursiveTextSplitter(RecursiveCharacterTextSplitter):
     def __init__(
             self,
-            separators: Optional[List[str]] = None,
+            separators: list[str] | None = None,
             keep_separator: bool = True,
             is_separator_regex: bool = True,
             **kwargs: Any,
@@ -39,13 +40,13 @@ class ChineseRecursiveTextSplitter(RecursiveCharacterTextSplitter):
             "\n\n",
             "\n",
             "。|！|？",
-            "\.\s|\!\s|\?\s",
-            "；|;\s",
-            "，|,\s"
+            r"\.\s|\!\s|\?\s",
+            r"；|;\s",
+            r"，|,\s"
         ]
         self._is_separator_regex = is_separator_regex
 
-    def _split_text(self, text: str, separators: List[str]) -> List[str]:
+    def _split_text(self, text: str, separators: list[str]) -> list[str]:
         """Split incoming text and return chunks."""
         final_chunks = []
         # Get appropriate separator to use

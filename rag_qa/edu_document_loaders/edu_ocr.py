@@ -1,4 +1,3 @@
-from typing import TYPE_CHECKING
 '''
 OCR 引擎选择策略：
 - GPU 可用 + 显式要求 CUDA → rapidocr_paddle（GPU 加速，需 PaddlePaddle）

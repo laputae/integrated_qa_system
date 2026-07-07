@@ -7,11 +7,10 @@ Standalone functions that take dependencies as explicit parameters.
 import json
 import sys
 import types
-from typing import Optional
 
 from openai import OpenAI
 
-from base import logger, Config
+from base import Config, logger
 
 
 def ensure_ragas_importable():
@@ -30,7 +29,7 @@ def ensure_ragas_importable():
 
         vertexai_module.ChatVertexAI = ChatVertexAI
         sys.modules["langchain_community.chat_models.vertexai"] = vertexai_module
-        setattr(chat_models_module, "vertexai", vertexai_module)
+        chat_models_module.vertexai = vertexai_module
 
 
 def prepare_ragas_dataset(results: list) -> "Dataset":
@@ -96,10 +95,10 @@ def run_ragas(dataset: "Dataset", config: Config, log=None) -> dict:
 
     from ragas import evaluate
     from ragas.metrics.collections import (
-        Faithfulness,
         AnswerRelevancy,
         ContextPrecision,
         ContextRecall,
+        Faithfulness,
     )
 
     llm = create_langchain_llm(config)

@@ -1,11 +1,10 @@
 import json
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import desc
 
-from db_models.eval_run import EvalRun
 from db_models.eval_result import EvalResult
+from db_models.eval_run import EvalRun
 
 
 class EvalRepository:
@@ -51,7 +50,7 @@ class EvalRepository:
             run.error_message = error_message
             session.commit()
 
-    def get_run(self, run_id: int) -> Optional[EvalRun]:
+    def get_run(self, run_id: int) -> EvalRun | None:
         with self.session_factory() as session:
             return session.query(EvalRun).filter(EvalRun.id == run_id).first()
 
@@ -69,7 +68,7 @@ class EvalRepository:
         with self.session_factory() as session:
             return session.query(EvalRun).count()
 
-    def get_latest_completed(self) -> Optional[EvalRun]:
+    def get_latest_completed(self) -> EvalRun | None:
         with self.session_factory() as session:
             return (
                 session.query(EvalRun)

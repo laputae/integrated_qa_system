@@ -1,17 +1,7 @@
-# cache/redis_client.py
-# 导入 Redis 客户端
-import redis
-# 导入 JSON 处理
 import json
-import os, sys
-# 获取当前文件所在目录的绝对路径
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# print(f'current_dir--》{current_dir}')
-module_dir = os.path.dirname(current_dir)
-# print(f'module_dir--》{module_dir}')
-project_root = os.path.dirname(module_dir)
-sys.path.insert(0, project_root)
-# 导入配置和日志
+
+import redis
+
 from base import Config, logger
 
 

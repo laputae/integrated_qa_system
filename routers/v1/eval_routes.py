@@ -1,13 +1,13 @@
 """Eval API endpoints."""
-import json
 import asyncio
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from db_models.base import SessionLocal
-from repositories.user_repo import UserRepository
 from gateway.deps import require_auth
+from repositories.user_repo import UserRepository
 from routers.v1.schemas import EvalRunRequest
 
 router = APIRouter()

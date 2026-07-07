@@ -1,7 +1,5 @@
-from typing import Optional
 
 from sqlalchemy import and_
-from sqlalchemy.orm import Session
 
 from db_models.user import User
 
@@ -22,13 +20,13 @@ class UserRepository:
             session.refresh(user)
             return user
 
-    def get_by_username(self, username: str, tenant_id: int) -> Optional[User]:
+    def get_by_username(self, username: str, tenant_id: int) -> User | None:
         with self.session_factory() as session:
             return session.query(User).filter(
                 and_(User.username == username, User.tenant_id == tenant_id)
             ).first()
 
-    def get_by_id(self, user_id: int) -> Optional[User]:
+    def get_by_id(self, user_id: int) -> User | None:
         with self.session_factory() as session:
             return session.query(User).filter(User.id == user_id).first()
 

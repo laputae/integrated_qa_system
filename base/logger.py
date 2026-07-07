@@ -1,12 +1,10 @@
-# -*- coding:utf-8 -*-
+import contextvars
+import json
 import logging
 import logging.handlers
 import os
-import json
-import contextvars
-from datetime import datetime, timezone
 from contextlib import contextmanager
-from typing import Optional
+from datetime import UTC, datetime
 
 from base.config import Config
 
@@ -21,9 +19,9 @@ class RequestContext:
     """Async-safe request-scoped context for structured log enrichment."""
 
     @staticmethod
-    def set(request_id: Optional[str] = None,
-            user_id: Optional[int] = None,
-            tenant_id: Optional[int] = None):
+    def set(request_id: str | None = None,
+            user_id: int | None = None,
+            tenant_id: int | None = None):
         if request_id is not None:
             _request_id_var.set(request_id)
         if user_id is not None:
@@ -47,9 +45,9 @@ class RequestContext:
 
     @staticmethod
     @contextmanager
-    def ctx(request_id: Optional[str] = None,
-            user_id: Optional[int] = None,
-            tenant_id: Optional[int] = None):
+    def ctx(request_id: str | None = None,
+            user_id: int | None = None,
+            tenant_id: int | None = None):
         """Context manager that saves context, sets new values, restores on exit."""
         old = RequestContext.get()
         try:
@@ -67,7 +65,7 @@ class JsonFormatter(logging.Formatter):
     def format(self, record):
         ctx = RequestContext.get()
         entry = {
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'level': record.levelname,
             'logger': record.name,
             'message': record.getMessage(),

@@ -6,10 +6,9 @@ Runtime updates via update_config() are kept in memory only (not persisted to di
 
 import json
 import threading
-from typing import Dict, Optional
+from typing import Optional
 
-from base import Config
-from base import logger
+from base import Config, logger
 
 
 class ChunkConfigManager:
@@ -31,11 +30,11 @@ class ChunkConfigManager:
         if self._initialized:
             return
         self._config_lock = threading.RLock()
-        self._config: Dict = {}
+        self._config: dict = {}
         self._initialized = True
         self.reload()
 
-    def _parse_doc_type_strategies(self, raw: str) -> Dict[str, str]:
+    def _parse_doc_type_strategies(self, raw: str) -> dict[str, str]:
         if not raw or raw == "{}":
             return {}
         try:
@@ -63,12 +62,12 @@ class ChunkConfigManager:
             }
         logger.info("ChunkConfigManager reloaded from config.ini")
 
-    def get_config(self) -> Dict:
+    def get_config(self) -> dict:
         """Return a copy of the current configuration."""
         with self._config_lock:
             return dict(self._config)
 
-    def update_config(self, updates: Dict):
+    def update_config(self, updates: dict):
         """Update runtime configuration (in-memory only, does not persist to disk)."""
         allowed_keys = {
             "default_strategy", "doc_type_strategies", "semantic_model_path",

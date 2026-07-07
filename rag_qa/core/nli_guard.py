@@ -8,23 +8,18 @@ Design: SoftGate only — flags/logs/metrics, does NOT block responses.
 Runs AFTER streaming completes so Time-to-First-Token is unaffected.
 """
 import os
-import sys
 import re
 import time
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
 
 import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-# Project-relative imports
+from base import Config, logger
+from base.metrics import qa_hallucination_guard_latency_seconds, qa_hallucination_guard_total
+
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _rag_qa_path = os.path.dirname(_current_dir)
-_project_root = os.path.dirname(_rag_qa_path)
-sys.path.insert(0, _project_root)
-
-from base import logger, Config
-from base.metrics import qa_hallucination_guard_total, qa_hallucination_guard_latency_seconds
 
 conf = Config()
 
@@ -46,7 +41,7 @@ class ClaimResult:
 class HallucinationResult:
     is_hallucinated: bool
     score: float
-    claims: List[ClaimResult]
+    claims: list[ClaimResult]
     details: str
 
 
@@ -154,7 +149,7 @@ class HallucinationGuard:
     # Claim decomposition
     # ============================================================
 
-    def _decompose_claims(self, text: str) -> List[str]:
+    def _decompose_claims(self, text: str) -> list[str]:
         """Split answer text into atomic claims.
 
         Handles Chinese sentence boundaries, numbered lists, bullet points,

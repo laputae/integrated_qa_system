@@ -1,12 +1,11 @@
 """Pydantic request/response models for the API."""
-from typing import Optional, Dict, List, Any
 from pydantic import BaseModel
 
 
 class QueryRequest(BaseModel):
     query: str
-    source_filter: Optional[str] = None
-    session_id: Optional[str] = None
+    source_filter: str | None = None
+    session_id: str | None = None
 
 
 class QueryResponse(BaseModel):
@@ -33,13 +32,13 @@ class RefreshRequest(BaseModel):
 
 
 class EvalRunRequest(BaseModel):
-    dataset: Optional[list] = None
+    dataset: list | None = None
     triggered_by: str = "manual"
 
 
 class ChunkConfigResponse(BaseModel):
     default_strategy: str
-    doc_type_strategies: Dict[str, str]
+    doc_type_strategies: dict[str, str]
     semantic_model_path: str
     semantic_device: str
     semantic_fallback_strategy: str
@@ -49,14 +48,14 @@ class ChunkConfigResponse(BaseModel):
 
 
 class ChunkConfigUpdate(BaseModel):
-    default_strategy: Optional[str] = None
-    doc_type_strategies: Optional[Dict[str, str]] = None
-    semantic_model_path: Optional[str] = None
-    semantic_device: Optional[str] = None
-    semantic_fallback_strategy: Optional[str] = None
-    parent_chunk_size: Optional[int] = None
-    child_chunk_size: Optional[int] = None
-    chunk_overlap: Optional[int] = None
+    default_strategy: str | None = None
+    doc_type_strategies: dict[str, str] | None = None
+    semantic_model_path: str | None = None
+    semantic_device: str | None = None
+    semantic_fallback_strategy: str | None = None
+    parent_chunk_size: int | None = None
+    child_chunk_size: int | None = None
+    chunk_overlap: int | None = None
 
 
 class DeleteHistoryRequest(BaseModel):

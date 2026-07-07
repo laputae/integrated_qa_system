@@ -5,14 +5,14 @@ Usage: uv run python scripts/import_jpkb_csv.py
 """
 
 import csv
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import text
-from db_models.base import engine, SessionLocal
 
+from db_models.base import SessionLocal, engine
 
 CSV_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -41,7 +41,7 @@ def import_csv():
 
     create_table_if_needed()
 
-    with open(CSV_PATH, "r", encoding="utf-8") as f:
+    with open(CSV_PATH, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
 

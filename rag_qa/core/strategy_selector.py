@@ -1,28 +1,18 @@
 # -*-coding:utf-8-*-
-# core/strategy_selector.py 源码
-import sys, os
-import re
 import hashlib
-# 获取当前文件所在目录的绝对路径
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# print(f'current_dir--》{current_dir}')
-# 获取core文件所在的目录的绝对路径
-rag_qa_path = os.path.dirname(current_dir)
-# print(f'rag_qa_path--》{rag_qa_path}')
-sys.path.insert(0, rag_qa_path)
-# 获取根目录文件所在的绝对位置
-project_root = os.path.dirname(rag_qa_path)
-sys.path.insert(0, project_root)
-# 导入 LangChain 提示模板
-from langchain_core.prompts import PromptTemplate
-# 导入日志和配置
-from base import logger, Config
-# 导入 OpenAI
-from openai import (
-    OpenAI, APITimeoutError, APIConnectionError,
-    InternalServerError, RateLimitError,
-)
+import re
 import time
+
+from langchain_core.prompts import PromptTemplate
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    InternalServerError,
+    OpenAI,
+    RateLimitError,
+)
+
+from base import Config, logger
 
 conf = Config()
 

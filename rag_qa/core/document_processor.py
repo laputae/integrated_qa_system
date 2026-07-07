@@ -3,8 +3,6 @@
 保持与原有 API 兼容
 """
 import os
-from datetime import datetime
-from typing import List
 
 # 导入必要的类型检查
 try:
@@ -12,16 +10,11 @@ try:
 except ImportError:
     Document = None
 
-# 导入 LlamaIndex 处理器
-from document_quality import (
-    estimate_document_quality,
-    LOW_QUALITY_THRESHOLD,
-)
-from llamaindex_processor import (
-    LlamaIndexProcessor,
+from .llamaindex_processor import (
     load_documents_from_directory as llamaindex_load,
+)
+from .llamaindex_processor import (
     process_documents as llamaindex_process,
-    incremental_process_and_index as llamaindex_incremental,
 )
 
 # 保持原有全局变量（如果其他模块引用）
@@ -68,7 +61,7 @@ def process_documents(directory_path, parent_chunk_size=None,
     return llamaindex_process(directory_path)
 
 
-def validate_document_format(documents: List) -> bool:
+def validate_document_format(documents: list) -> bool:
     """
     验证文档格式是否符合预期
 

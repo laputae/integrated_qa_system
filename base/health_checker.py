@@ -1,4 +1,3 @@
-# -*- coding:utf-8 -*-
 """
 HealthChecker — performs actual dependency probes for each component.
 
@@ -6,8 +5,8 @@ Extracted from health.py to keep each module under 300 lines.
 """
 import time
 
-from base import logger, Config
-from base.health_types import HealthStatus, ComponentHealth
+from base import Config, logger
+from base.health_types import ComponentHealth, HealthStatus
 
 
 class HealthChecker:
@@ -261,7 +260,7 @@ class HealthChecker:
             regression = quality.get("regression", {})
             if qs == "critical":
                 result.status = HealthStatus.DEGRADED
-                result.error_message = f"评估质量严重下降 (faithfulness < critical threshold)"
+                result.error_message = "评估质量严重下降 (faithfulness < critical threshold)"
             elif regression.get("detected"):
                 result.status = HealthStatus.DEGRADED
                 result.error_message = regression.get("details", "检测到质量回归")

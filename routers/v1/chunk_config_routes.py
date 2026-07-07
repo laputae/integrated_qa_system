@@ -2,8 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from db_models.base import SessionLocal
-from repositories.user_repo import UserRepository
 from gateway.deps import require_auth
+from repositories.user_repo import UserRepository
 from routers.v1.schemas import ChunkConfigResponse, ChunkConfigUpdate
 
 router = APIRouter()
@@ -32,8 +32,8 @@ async def update_chunk_config(update: ChunkConfigUpdate, user: dict = Depends(re
     if not repo.is_admin_user(user["user_id"]):
         raise HTTPException(status_code=403, detail="需要管理员权限")
 
-    from base.chunk_config import ChunkConfigManager
     from base import logger
+    from base.chunk_config import ChunkConfigManager
     mgr = ChunkConfigManager()
     updates = {k: v for k, v in update.model_dump(exclude_none=True).items()}
     mgr.update_config(updates)
@@ -57,8 +57,8 @@ async def reload_chunk_config(user: dict = Depends(require_auth)):
     if not repo.is_admin_user(user["user_id"]):
         raise HTTPException(status_code=403, detail="需要管理员权限")
 
-    from base.chunk_config import ChunkConfigManager
     from base import logger
+    from base.chunk_config import ChunkConfigManager
     mgr = ChunkConfigManager()
     mgr.reload()
     logger.info("Chunk config reloaded from config.ini by user %s", user["username"])

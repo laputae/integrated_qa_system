@@ -7,8 +7,9 @@ Each strategy is a standalone function that takes its dependencies explicitly.
 import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from .prompts import RAGPrompts
+
 from base import logger as _default_logger
-from prompts import RAGPrompts
 
 
 def retrieve_with_backtracking(

@@ -11,17 +11,14 @@ Each registered model provides:
 """
 import json
 import os
-import sys
 
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-_rag_qa_path = os.path.dirname(_current_dir)
-sys.path.insert(0, _rag_qa_path)
-_project_root = os.path.dirname(_rag_qa_path)
-sys.path.insert(0, _project_root)
+from tqdm import tqdm
 
 from base import logger
 
-MODEL_DIR = os.path.join(_rag_qa_path, 'models')
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_rag_qa_path = os.path.dirname(_current_dir)
+MODEL_DIR = os.path.join(_rag_qa_path, "models")
 
 _registry: dict = {}
 
@@ -202,15 +199,13 @@ except ImportError as e:
 # ============================================================
 # batch_embed(): batched embedding with progress bar + checkpoint/resume
 # ============================================================
-from typing import List, Optional
-from tqdm import tqdm
 
 
 def batch_embed(
     embedding_fn,
-    texts: List[str],
+    texts: list[str],
     batch_size: int = 32,
-    checkpoint_path: Optional[str] = None,
+    checkpoint_path: str | None = None,
     resume: bool = False,
     desc: str = "Embedding",
 ) -> dict:
@@ -228,14 +223,14 @@ def batch_embed(
     completed_batches: set = set()
     if resume and checkpoint_path and os.path.exists(checkpoint_path):
         try:
-            with open(checkpoint_path, "r", encoding="utf-8") as f:
+            with open(checkpoint_path, encoding="utf-8") as f:
                 ckpt = json.load(f)
             completed_batches = set(ckpt.get("completed_batches", []))
             logger.info(
                 f"Resuming from checkpoint: {len(completed_batches)} batches done "
                 f"({len(completed_batches) * batch_size} texts)"
             )
-        except (json.JSONDecodeError, IOError) as e:
+        except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"Checkpoint unreadable, starting fresh: {e}")
 
     batches = [
@@ -297,7 +292,6 @@ def batch_embed(
 
 
 def _save_checkpoint(path: str, data: dict):
-    import tempfile
     dirpart = os.path.dirname(path)
     if dirpart:
         os.makedirs(dirpart, exist_ok=True)

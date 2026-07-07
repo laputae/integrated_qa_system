@@ -1,10 +1,7 @@
 """评估自动化管道 — Config, API, Health, and Dataset tests"""
 import json
 import os
-import sys
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -120,7 +117,7 @@ class TestDatasetLoading:
         full_path = os.path.join(_project_root, path)
         assert os.path.exists(full_path), f"Dataset not found: {full_path}"
 
-        with open(full_path, "r", encoding="utf-8") as f:
+        with open(full_path, encoding="utf-8") as f:
             data = json.load(f)
         assert isinstance(data, list)
         assert len(data) > 0

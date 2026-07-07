@@ -1,4 +1,3 @@
-from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
 
@@ -9,11 +8,11 @@ class TenantRepository:
     def __init__(self, session_factory):
         self.session_factory = session_factory
 
-    def get_by_name(self, name: str) -> Optional[Tenant]:
+    def get_by_name(self, name: str) -> Tenant | None:
         with self.session_factory() as session:
             return session.query(Tenant).filter(Tenant.name == name).first()
 
-    def get_by_id(self, tenant_id: int) -> Optional[Tenant]:
+    def get_by_id(self, tenant_id: int) -> Tenant | None:
         with self.session_factory() as session:
             return session.query(Tenant).filter(Tenant.id == tenant_id).first()
 

@@ -1,5 +1,4 @@
 """评估自动化管道 — Service Tests (core)"""
-import pytest
 from unittest.mock import MagicMock, patch
 
 
@@ -186,8 +185,8 @@ class TestEvalServiceQualityStatus:
         assert status["quality_status"] == "unknown"
 
     def test_quality_status_good(self):
-        from rag_qa.eval.eval_service import EvalService
         from db_models.eval_run import EvalRun
+        from rag_qa.eval.eval_service import EvalService
 
         config = MagicMock()
         config.EVAL_QUALITY_CRITICAL_THRESHOLD = 0.4
@@ -205,8 +204,8 @@ class TestEvalServiceQualityStatus:
         assert status["quality_status"] == "good"
 
     def test_quality_status_warning(self):
-        from rag_qa.eval.eval_service import EvalService
         from db_models.eval_run import EvalRun
+        from rag_qa.eval.eval_service import EvalService
         config = MagicMock()
         config.EVAL_QUALITY_CRITICAL_THRESHOLD = 0.4
         config.EVAL_QUALITY_WARNING_THRESHOLD = 0.6
@@ -220,8 +219,8 @@ class TestEvalServiceQualityStatus:
         assert status["quality_status"] == "warning"
 
     def test_quality_status_critical(self):
-        from rag_qa.eval.eval_service import EvalService
         from db_models.eval_run import EvalRun
+        from rag_qa.eval.eval_service import EvalService
         config = MagicMock()
         config.EVAL_QUALITY_CRITICAL_THRESHOLD = 0.4
         config.EVAL_QUALITY_WARNING_THRESHOLD = 0.6

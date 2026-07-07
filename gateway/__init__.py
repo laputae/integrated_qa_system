@@ -1,3 +1,4 @@
+from gateway.audit import AuditEventType, AuditLogger
 from gateway.auth import (
     create_access_token,
     create_refresh_token,
@@ -8,9 +9,8 @@ from gateway.auth import (
 )
 from gateway.deps import get_current_user
 from gateway.middleware import GatewayMiddleware
-from gateway.security import SecurityFilter
 from gateway.rate_limiter import RateLimiter
-from gateway.audit import AuditLogger, AuditEventType
+from gateway.security import SecurityFilter
 
 __all__ = [
     "create_access_token",

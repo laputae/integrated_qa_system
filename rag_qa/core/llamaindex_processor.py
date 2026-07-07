@@ -7,61 +7,48 @@ LlamaIndex 文档处理器 - 混合模式
 - 增量追踪：SQLite IngestionTracker + LlamaIndex ref_doc_id
 """
 import os
-import sys
 from datetime import datetime
-from typing import Dict, List, Optional
 
-# 路径推导
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-_rag_qa_path = os.path.dirname(_current_dir)
-sys.path.insert(0, _rag_qa_path)
-_project_root = os.path.dirname(_rag_qa_path)
-sys.path.insert(0, _project_root)
-
-DATA_DIR = os.path.join(_rag_qa_path, 'data')
-MODEL_DIR = os.path.join(_rag_qa_path, 'models')
-USE_CUDA = False
-
-# 原始加载器（保留 OCR 能力）
 from langchain_community.document_loaders import TextLoader
+
 try:
     from langchain_community.document_loaders.markdown import UnstructuredMarkdownLoader
 except ImportError:
     UnstructuredMarkdownLoader = None
-from edu_document_loaders import OCRPDFLoader, OCRDOCLoader, OCRPPTLoader, OCRIMGLoader
 
-# 自适应切分器（策略模式：recursive / semantic / markdown）
-from edu_text_spliter.chunk_strategy import (
-    create_parent_splitter,
-    create_child_splitter,
-    SEMANTIC,
-    RECURSIVE,
-    MARKDOWN,
-)
-from base.chunk_config import ChunkConfigManager
-
-# LlamaIndex 核心（仅用于索引构建）
-from llama_index.core import (
-    VectorStoreIndex,
-    StorageContext,
-    load_index_from_storage,
-    Document as LlamaDocument
-)
+from langchain_core.documents import Document as LangchainDocument
+from llama_index.core import Document as LlamaDocument
+from llama_index.core import StorageContext, VectorStoreIndex, load_index_from_storage
 from llama_index.core.schema import (
-    TextNode,
     NodeRelationship,
     RelatedNodeInfo,
+    TextNode,
 )
 from llama_index.vector_stores.milvus import MilvusVectorStore
-from langchain_core.documents import Document as LangchainDocument
-from base import logger, Config
-from ingestion_tracker import IngestionTracker
-from embedding_registry import create_llamaindex_model, get_dense_dim
-from document_quality import (
+
+from base import Config, logger
+from base.chunk_config import ChunkConfigManager
+
+from ..edu_document_loaders import OCRDOCLoader, OCRIMGLoader, OCRPDFLoader, OCRPPTLoader
+from ..edu_text_spliter.chunk_strategy import (
+    MARKDOWN,
+    RECURSIVE,
+    create_child_splitter,
+    create_parent_splitter,
+)
+from .document_quality import (
     clean_document_text,
     estimate_document_quality,
-    LOW_QUALITY_THRESHOLD,
 )
+from .embedding_registry import create_llamaindex_model, get_dense_dim
+from .ingestion_tracker import IngestionTracker
+
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_rag_qa_path = os.path.dirname(_current_dir)
+
+DATA_DIR = os.path.join(_rag_qa_path, "data")
+MODEL_DIR = os.path.join(_rag_qa_path, "models")
+USE_CUDA = False
 
 conf = Config()
 
@@ -86,7 +73,7 @@ class LlamaIndexProcessor:
     - add_documents: 使用 LlamaIndex 索引（支持增量更新）
     """
 
-    def __init__(self, tracker_db_path: Optional[str] = None):
+    def __init__(self, tracker_db_path: str | None = None):
         self.logger = logger
         self.storage_dir = os.path.join(DATA_DIR, "llamaindex_storage")
         os.makedirs(self.storage_dir, exist_ok=True)
@@ -255,7 +242,7 @@ class LlamaIndexProcessor:
 
         return child_chunks
 
-    def _load_selected_files(self, file_paths: List[str]) -> list:
+    def _load_selected_files(self, file_paths: list[str]) -> list:
         """只加载指定文件列表（跳过不需要重新处理的文件），复用 OCR 加载器"""
         documents = []
         source = None
@@ -297,10 +284,10 @@ class LlamaIndexProcessor:
     def incremental_process_and_index(
         self,
         directory_path: str,
-        parent_chunk_size: Optional[int] = None,
-        child_chunk_size: Optional[int] = None,
-        chunk_overlap: Optional[int] = None,
-    ) -> Dict[str, int]:
+        parent_chunk_size: int | None = None,
+        child_chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+    ) -> dict[str, int]:
         """增量处理目录并将文档添加到索引。
 
         1. 扫描目录，哈希对比 SQLite → 分类为 new/modified/unchanged/deleted
@@ -375,7 +362,7 @@ class LlamaIndexProcessor:
         self.logger.info(f"生成了 {len(child_chunks)} 个子块")
 
         # Step 5: 按源文件分组，设置 ref_doc_id，批量插入
-        chunks_by_file: Dict[str, list] = {}
+        chunks_by_file: dict[str, list] = {}
         for chunk in child_chunks:
             fp = chunk.metadata.get("file_path", "")
             if fp not in chunks_by_file:
@@ -543,8 +530,9 @@ if __name__ == "__main__":
     print("查询测试")
     print("=" * 50)
     from llama_index.core import Settings
-    from llama_index.llms.openai.base import OpenAI as LlamaOpenAI
     from llama_index.core.llms import LLMMetadata
+    from llama_index.llms.openai.base import OpenAI as LlamaOpenAI
+
     from base.config import Config
 
     class DeepSeekLLM(LlamaOpenAI):

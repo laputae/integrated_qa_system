@@ -7,7 +7,6 @@ import json
 import os
 from datetime import datetime
 
-
 # ================================================================
 # Candidate configurations
 # ================================================================
@@ -90,7 +89,7 @@ def print_report(results, project_root=None):
 
     # Delta vs baseline
     if baseline and baseline is not best:
-        print(f"\n--- 相对 baseline 改善 ---")
+        print("\n--- 相对 baseline 改善 ---")
         bm = baseline["metrics"]
         for r in completed:
             if r is baseline:
@@ -112,7 +111,7 @@ def print_report(results, project_root=None):
             print(f"  {r['config']['label']}: {r.get('error', 'unknown')}")
 
     # Config details
-    print(f"\n--- 配置详情 ---")
+    print("\n--- 配置详情 ---")
     for r in completed:
         c = r["config"]
         print(

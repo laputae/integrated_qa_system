@@ -1,23 +1,25 @@
 """Auth endpoints: register, login, refresh, logout + greeting patterns."""
 import re
-import uuid
-from typing import Optional
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from db_models.base import SessionLocal
-from repositories.user_repo import UserRepository
-from repositories.tenant_repo import TenantRepository
+from gateway.audit import AuditEventType, get_audit_logger
 from gateway.auth import (
-    create_access_token, create_refresh_token, decode_refresh_token,
-    hash_password, verify_password, get_token_ttl,
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    get_token_ttl,
+    hash_password,
+    verify_password,
 )
-from gateway.security import SecurityFilter
 from gateway.deps import require_auth
-from gateway.audit import AuditLogger, AuditEventType, get_audit_logger
+from gateway.security import SecurityFilter
 from mysql_qa import get_redis_client
-from routers.v1.schemas import RegisterRequest, LoginRequest, RefreshRequest
+from repositories.tenant_repo import TenantRepository
+from repositories.user_repo import UserRepository
+from routers.v1.schemas import LoginRequest, RefreshRequest, RegisterRequest
 
 router = APIRouter()
 
@@ -35,7 +37,7 @@ GREETING_PATTERNS = [
 ]
 
 
-def check_greeting(query: str) -> Optional[str]:
+def check_greeting(query: str) -> str | None:
     query_text = query.strip()
     for pattern_info in GREETING_PATTERNS:
         if re.match(pattern_info["pattern"], query_text, re.IGNORECASE):

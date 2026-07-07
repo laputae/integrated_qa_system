@@ -4,12 +4,14 @@ Run this script before starting the app after upgrading to multi-tenant schema:
     uv run scripts/seed_default_tenant.py
 """
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import text, update
-from db_models.base import SessionLocal, init_db, Base, engine
+
+from db_models.base import Base, SessionLocal, engine
 from db_models.tenant import Tenant
 
 
@@ -96,9 +98,9 @@ def seed():
             print(f"Default tenant already exists (id={tenant_id})")
 
         # Migrate NULL tenant_id rows to default tenant
-        from db_models.user import User
         from db_models.conversation import Conversation
         from db_models.refresh_token import RefreshToken
+        from db_models.user import User
 
         for model, label in [
             (User, "users"),

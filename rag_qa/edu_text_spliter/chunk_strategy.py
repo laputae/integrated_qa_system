@@ -1,7 +1,6 @@
 """Chunking strategy factory — returns the correct LangChain-compatible text splitter
 for a given strategy name."""
 
-from typing import Optional
 
 from langchain_text_splitters import MarkdownTextSplitter, TextSplitter
 
@@ -19,7 +18,7 @@ def create_parent_splitter(
     strategy: str,
     chunk_size: int,
     chunk_overlap: int,
-    semantic_model_path: Optional[str] = None,
+    semantic_model_path: str | None = None,
 ) -> TextSplitter:
     """Create a parent-level text splitter for the given strategy."""
     if strategy == SEMANTIC:

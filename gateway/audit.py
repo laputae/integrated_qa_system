@@ -1,7 +1,5 @@
 import json
-from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 
 class AuditEventType(str, Enum):
@@ -26,15 +24,15 @@ class AuditLogger:
     @property
     def repo(self):
         if self._repo is None:
-            from repositories.audit_repo import AuditRepository
             from db_models.base import SessionLocal
+            from repositories.audit_repo import AuditRepository
             self._repo = AuditRepository(SessionLocal)
         return self._repo
 
-    def log(self, event_type: AuditEventType, user_id: Optional[int] = None,
-            tenant_id: Optional[int] = None,
-            ip_address: Optional[str] = None, user_agent: Optional[str] = None,
-            detail: Optional[dict] = None):
+    def log(self, event_type: AuditEventType, user_id: int | None = None,
+            tenant_id: int | None = None,
+            ip_address: str | None = None, user_agent: str | None = None,
+            detail: dict | None = None):
         try:
             self.repo.insert(
                 user_id=user_id,
@@ -48,7 +46,7 @@ class AuditLogger:
             pass
 
 
-_audit_logger: Optional[AuditLogger] = None
+_audit_logger: AuditLogger | None = None
 
 
 def get_audit_logger() -> AuditLogger:

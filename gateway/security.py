@@ -1,6 +1,5 @@
 import re
 from html import escape
-from typing import Optional, Tuple
 
 SQL_INJECTION_PATTERNS = [
     r"(?i)UNION\s+SELECT",
@@ -44,33 +43,33 @@ USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{3,50}$")
 
 class SecurityFilter:
     @staticmethod
-    def detect_sql_injection(value: str) -> Optional[str]:
+    def detect_sql_injection(value: str) -> str | None:
         for pattern in SQL_INJECTION_PATTERNS:
             if re.search(pattern, value):
                 return f"SQL injection pattern detected: {pattern}"
         return None
 
     @staticmethod
-    def detect_xss(value: str) -> Optional[str]:
+    def detect_xss(value: str) -> str | None:
         for pattern in XSS_PATTERNS:
             if re.search(pattern, value):
                 return f"XSS pattern detected: {pattern}"
         return None
 
     @staticmethod
-    def validate_username(username: str) -> Tuple[bool, Optional[str]]:
+    def validate_username(username: str) -> tuple[bool, str | None]:
         if not USERNAME_PATTERN.match(username):
             return False, "用户名只允许字母、数字、下划线和连字符，长度3-50"
         return True, None
 
     @staticmethod
-    def validate_password(password: str) -> Tuple[bool, Optional[str]]:
+    def validate_password(password: str) -> tuple[bool, str | None]:
         if not (6 <= len(password) <= 128):
             return False, "密码长度必须在6-128个字符之间"
         return True, None
 
     @staticmethod
-    def validate_uuid(value: str) -> Tuple[bool, Optional[str]]:
+    def validate_uuid(value: str) -> tuple[bool, str | None]:
         uuid_pattern = re.compile(
             r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
         )
@@ -83,7 +82,7 @@ class SecurityFilter:
         return escape(value)
 
     @staticmethod
-    def scan(value: str) -> Tuple[bool, Optional[str]]:
+    def scan(value: str) -> tuple[bool, str | None]:
         sql_result = SecurityFilter.detect_sql_injection(value)
         if sql_result:
             return False, sql_result

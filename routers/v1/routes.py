@@ -5,13 +5,13 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from db_models.base import SessionLocal
-from repositories.conversation_repo import ConversationRepository
-from gateway.deps import get_current_user, require_auth
-from gateway.audit import AuditEventType, get_audit_logger
-from routers.v1.schemas import QueryRequest, DeleteHistoryRequest
-from routers.v1.auth import check_greeting
 from base.health import DegradationLevel
+from db_models.base import SessionLocal
+from gateway.audit import AuditEventType, get_audit_logger
+from gateway.deps import get_current_user, require_auth
+from repositories.conversation_repo import ConversationRepository
+from routers.v1.auth import check_greeting
+from routers.v1.schemas import DeleteHistoryRequest, QueryRequest
 
 router = APIRouter()
 

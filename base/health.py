@@ -1,4 +1,3 @@
-# -*- coding:utf-8 -*-
 """
 Health check + multi-level degradation system — orchestration layer.
 
@@ -8,23 +7,22 @@ Provides:
 Types (HealthStatus, DegradationLevel, ComponentHealth, CircuitBreaker) are in health_types.py.
 HealthChecker (per-dependency probes) is in health_checker.py.
 """
-import time
-import threading
 import asyncio
-from typing import Callable, Optional, Dict
+import threading
+import time
+from collections.abc import Callable
 
-from base import logger, Config
+from base import Config, logger
+from base.health_checker import HealthChecker
 from base.health_types import (
-    HealthStatus,
-    DegradationLevel,
-    ComponentHealth,
-    CircuitBreaker,
     _COMPONENT_DEGRADATION_MAP,
     _COMPONENT_ORDER,
+    CircuitBreaker,
+    ComponentHealth,
+    DegradationLevel,
+    HealthStatus,
 )
-from base.health_checker import HealthChecker
 from base.metrics import qa_component_health, qa_degradation_level
-
 
 # ============================================================
 # System Health — Central orchestrator
@@ -45,10 +43,10 @@ class SystemHealth:
         self._checker = HealthChecker(config, self.logger)
 
         # Registered components: name -> (checker_callable, ComponentHealth, CircuitBreaker)
-        self._components: Dict[str, tuple] = {}
-        self._health_cache: Dict[str, ComponentHealth] = {}
+        self._components: dict[str, tuple] = {}
+        self._health_cache: dict[str, ComponentHealth] = {}
 
-        self._background_task: Optional[asyncio.Task] = None
+        self._background_task: asyncio.Task | None = None
 
     # ------- Registration -------
 
@@ -106,7 +104,7 @@ class SystemHealth:
 
         return component
 
-    def check_all(self) -> Dict[str, ComponentHealth]:
+    def check_all(self) -> dict[str, ComponentHealth]:
         """Run a full health check across all registered components."""
         with self._lock:
             for name in self._components:
@@ -133,7 +131,7 @@ class SystemHealth:
                     max_level = level
         return max_level
 
-    def _get_cached_or_refresh(self) -> Dict[str, ComponentHealth]:
+    def _get_cached_or_refresh(self) -> dict[str, ComponentHealth]:
         """Return cached results if still fresh, otherwise re-check."""
         if time.time() - self._last_full_check < self._cache_ttl and self._health_cache:
             return dict(self._health_cache)

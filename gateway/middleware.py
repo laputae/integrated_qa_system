@@ -1,6 +1,5 @@
 import time
 import uuid
-from typing import Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -8,8 +7,8 @@ from starlette.responses import JSONResponse, Response
 
 from base import RequestContext, logger
 from gateway.audit import AuditEventType, get_audit_logger
-from gateway.rate_limiter import RateLimiter
 from gateway.auth_whitelist import is_whitelisted
+from gateway.rate_limiter import RateLimiter
 from gateway.security import SecurityFilter
 from mysql_qa import get_redis_client
 
@@ -28,9 +27,9 @@ def _get_client_ip(request: Request) -> str:
 class GatewayMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
-        self._rate_limiter: Optional[RateLimiter] = None
-        self._metrics_auth_user: Optional[str] = None
-        self._metrics_auth_password: Optional[str] = None
+        self._rate_limiter: RateLimiter | None = None
+        self._metrics_auth_user: str | None = None
+        self._metrics_auth_password: str | None = None
 
     @staticmethod
     def _get_config():

@@ -3,31 +3,28 @@ todo: 和之前的rag_system不一样的地方是：生成答案时，考虑了�
 '''
 # -*-coding:utf-8-*-
 # core/rag_system.py 源码
-import sys, os, time
+import os
+import time
 
-# 获取当前文件所在目录的绝对路径
+from base import Config, logger
+
+from .llm_reranker import (
+    check_force_rag_keywords,
+    is_critical_query,
+    rerank_with_llm,
+)
+from .prompts import RAGPrompts
+from .query_classifier import QueryClassifier
+from .retrieval_strategies import (
+    retrieve_with_backtracking,
+    retrieve_with_hyde,
+    retrieve_with_subqueries,
+)
+from .strategy_selector import StrategySelector
+from .vector_store import VectorStore
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 rag_qa_path = os.path.dirname(current_dir)
-sys.path.insert(0, rag_qa_path)
-project_root = os.path.dirname(rag_qa_path)
-sys.path.insert(0, project_root)
-
-from prompts import RAGPrompts
-from base import logger, Config
-from base.metrics import qa_llm_rerank_total, qa_llm_rerank_latency_seconds
-from query_classifier import QueryClassifier
-from strategy_selector import StrategySelector
-from vector_store import VectorStore
-from llm_reranker import (
-    rerank_with_llm,
-    is_critical_query,
-    check_force_rag_keywords,
-)
-from retrieval_strategies import (
-    retrieve_with_backtracking,
-    retrieve_with_subqueries,
-    retrieve_with_hyde,
-)
 
 conf = Config()
 
@@ -45,7 +42,7 @@ class RAGSystem:
         self._last_guard_result = None
         if conf.HALLUCINATION_GUARD_ENABLED:
             try:
-                from nli_guard import HallucinationGuard
+                from .nli_guard import HallucinationGuard
                 self.hallucination_guard = HallucinationGuard(
                     model_name=conf.HALLUCINATION_GUARD_MODEL,
                 )

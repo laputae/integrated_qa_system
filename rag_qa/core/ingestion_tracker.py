@@ -6,11 +6,10 @@ Tracks which files have been ingested, their content hashes, and processing stat
 Enables incremental document processing by categorizing files as:
   NEW / MODIFIED / UNCHANGED / DELETED
 """
-import sqlite3
 import hashlib
 import os
+import sqlite3
 from datetime import datetime
-from typing import Dict, List, Optional
 
 from base import logger
 
@@ -71,13 +70,13 @@ class IngestionTracker:
         normalized = os.path.normpath(abs_path).lower()
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
-    def scan_directory(self, directory_path: str) -> Dict[str, List[Dict]]:
+    def scan_directory(self, directory_path: str) -> dict[str, list[dict]]:
         """Scan directory and categorize each supported file.
 
         Returns:
             dict with keys: "new", "modified", "unchanged", "deleted"
         """
-        result: Dict[str, List[Dict]] = {
+        result: dict[str, list[dict]] = {
             "new": [],
             "modified": [],
             "unchanged": [],
@@ -102,7 +101,7 @@ class IngestionTracker:
                     file_size = stat.st_size
                     file_mtime = stat.st_mtime
                     doc_id = self.compute_doc_id(file_path)
-                except (FileNotFoundError, IOError, PermissionError) as e:
+                except (OSError, FileNotFoundError, PermissionError) as e:
                     logger.warning(f"无法读取文件 {file_path}: {e}")
                     continue
 
@@ -184,7 +183,7 @@ class IngestionTracker:
         )
         self.conn.commit()
 
-    def get_doc_id(self, file_path: str) -> Optional[str]:
+    def get_doc_id(self, file_path: str) -> str | None:
         """Get the doc_id for a known file path, or None."""
         row = self._lookup(file_path)
         return row["doc_id"] if row else None
@@ -205,7 +204,7 @@ class IngestionTracker:
 
     # ---- internal helpers ----
 
-    def _lookup(self, file_path: str) -> Optional[Dict]:
+    def _lookup(self, file_path: str) -> dict | None:
         """Look up a file by path, returning a dict or None."""
         norm_path = os.path.normpath(file_path).lower()
         cursor = self.conn.execute(
@@ -216,7 +215,7 @@ class IngestionTracker:
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def _get_all_active(self) -> List[Dict]:
+    def _get_all_active(self) -> list[dict]:
         """Get all active (non-deleted) records."""
         cursor = self.conn.execute(
             "SELECT file_path, doc_id, file_name "

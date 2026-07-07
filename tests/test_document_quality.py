@@ -2,7 +2,6 @@
 """estimate_document_quality 独立冒烟测试（不触发 llamaindex_processor 的重型 ML 导入）"""
 import re
 
-
 # ---- 从 llamaindex_processor.py 复制的质量评估逻辑 ----
 
 _CJK_START = 0x4E00        # CJK统一表意文字起始

@@ -1,11 +1,10 @@
 import time
-from typing import Optional
 
 from mysql_qa import RedisClient, get_redis_client
 
 
 class RateLimiter:
-    def __init__(self, redis_client: Optional[RedisClient] = None):
+    def __init__(self, redis_client: RedisClient | None = None):
         self._redis = redis_client
 
     @property

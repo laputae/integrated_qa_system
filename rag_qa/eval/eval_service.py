@@ -3,16 +3,16 @@ import json
 import os
 import time
 
-from base import logger, Config
+from base import Config, logger
+from rag_qa.eval.quality_reporter import (
+    check_regression,
+    get_latest_metrics,
+    get_quality_status,
+    get_trends,
+)
 from rag_qa.eval.ragas_runner import (
     prepare_ragas_dataset,
     run_ragas,
-)
-from rag_qa.eval.quality_reporter import (
-    check_regression,
-    get_quality_status,
-    get_trends,
-    get_latest_metrics,
 )
 
 
@@ -225,7 +225,7 @@ class EvalService:
                 os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                 path,
             )
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
 
     def _run_through_pipeline(self, question: str,

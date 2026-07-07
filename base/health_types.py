@@ -1,13 +1,11 @@
-# -*- coding:utf-8 -*-
 """
 Health check types: enums, data classes, and circuit breaker.
 
 Extracted from health.py to keep each module under 300 lines.
 """
 import time
-from enum import Enum, IntEnum
 from dataclasses import dataclass
-
+from enum import Enum, IntEnum
 
 # ============================================================
 # Enums

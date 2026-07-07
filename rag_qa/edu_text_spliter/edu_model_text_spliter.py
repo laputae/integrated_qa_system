@@ -1,11 +1,9 @@
+import logging
 import os
 import re
-from typing import List, Optional
 
 from langchain_text_splitters import CharacterTextSplitter
 from modelscope.pipelines import pipeline
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +18,7 @@ class AliTextSplitter(CharacterTextSplitter):
     def __init__(
         self,
         pdf: bool = False,
-        model_path: Optional[str] = None,
+        model_path: str | None = None,
         device: str = "cpu",
         **kwargs,
     ):
@@ -49,7 +47,7 @@ class AliTextSplitter(CharacterTextSplitter):
             )
         return self._pipeline
 
-    def split_text(self, text: str) -> List[str]:
+    def split_text(self, text: str) -> list[str]:
         if self.pdf:
             text = re.sub(r"\n{3,}", r"\n", text)
             text = re.sub(r'\s', " ", text)

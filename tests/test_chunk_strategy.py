@@ -1,7 +1,7 @@
 """自适应 Chunk 配置 — 切分策略 & 集成测试"""
 from unittest.mock import MagicMock, patch
-import pytest
 
+import pytest
 
 # ============================================================================
 # AliTextSplitter 测试
@@ -94,7 +94,8 @@ class TestAliTextSplitter:
 class TestChunkStrategy:
     def test_create_parent_recursive(self):
         from rag_qa.edu_text_spliter.chunk_strategy import (
-            create_parent_splitter, RECURSIVE,
+            RECURSIVE,
+            create_parent_splitter,
         )
         from rag_qa.edu_text_spliter.edu_chinese_recursive_text_splitter import (
             ChineseRecursiveTextSplitter,
@@ -104,16 +105,19 @@ class TestChunkStrategy:
         assert splitter._chunk_size == 1200
 
     def test_create_parent_markdown(self):
-        from rag_qa.edu_text_spliter.chunk_strategy import (
-            create_parent_splitter, MARKDOWN,
-        )
         from langchain_text_splitters import MarkdownTextSplitter
+
+        from rag_qa.edu_text_spliter.chunk_strategy import (
+            MARKDOWN,
+            create_parent_splitter,
+        )
         splitter = create_parent_splitter(MARKDOWN, 800, 30)
         assert isinstance(splitter, MarkdownTextSplitter)
 
     def test_create_parent_semantic(self):
         from rag_qa.edu_text_spliter.chunk_strategy import (
-            create_parent_splitter, SEMANTIC,
+            SEMANTIC,
+            create_parent_splitter,
         )
         from rag_qa.edu_text_spliter.edu_model_text_spliter import AliTextSplitter
         splitter = create_parent_splitter(SEMANTIC, 1200, 50)
@@ -122,7 +126,8 @@ class TestChunkStrategy:
     def test_create_child_semantic_uses_recursive(self):
         """child splitter 在 semantic 策略下仍使用 recursive"""
         from rag_qa.edu_text_spliter.chunk_strategy import (
-            create_child_splitter, SEMANTIC,
+            SEMANTIC,
+            create_child_splitter,
         )
         from rag_qa.edu_text_spliter.edu_chinese_recursive_text_splitter import (
             ChineseRecursiveTextSplitter,
@@ -131,10 +136,12 @@ class TestChunkStrategy:
         assert isinstance(splitter, ChineseRecursiveTextSplitter)
 
     def test_create_child_markdown(self):
-        from rag_qa.edu_text_spliter.chunk_strategy import (
-            create_child_splitter, MARKDOWN,
-        )
         from langchain_text_splitters import MarkdownTextSplitter
+
+        from rag_qa.edu_text_spliter.chunk_strategy import (
+            MARKDOWN,
+            create_child_splitter,
+        )
         splitter = create_child_splitter(MARKDOWN, 300, 50)
         assert isinstance(splitter, MarkdownTextSplitter)
 
@@ -160,8 +167,9 @@ class TestSplitDocumentsStrategy:
         self, mock_cfg_mgr, mock_create_child, mock_create_parent,
     ):
         """语义策略失败时回退到 fallback 策略"""
-        from rag_qa.core.llamaindex_processor import LlamaIndexProcessor
         from langchain_core.documents import Document as LangchainDocument
+
+        from rag_qa.core.llamaindex_processor import LlamaIndexProcessor
 
         mgr_instance = MagicMock()
         mgr_instance.get_strategy.return_value = "semantic"
@@ -191,8 +199,9 @@ class TestSplitDocumentsStrategy:
         self, mock_cfg_mgr, mock_create_child, mock_create_parent,
     ):
         """默认策略为 recursive"""
-        from rag_qa.core.llamaindex_processor import LlamaIndexProcessor
         from langchain_core.documents import Document as LangchainDocument
+
+        from rag_qa.core.llamaindex_processor import LlamaIndexProcessor
 
         mgr_instance = MagicMock()
         mgr_instance.get_strategy.return_value = "recursive"

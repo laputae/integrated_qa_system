@@ -1,6 +1,7 @@
 """评估自动化管道 — Repository Tests"""
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 
 class TestEvalRepositoryRun:

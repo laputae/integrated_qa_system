@@ -1,10 +1,6 @@
 """测试策略选择缓存 + 规则预判"""
-import sys, os
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
-
-from rag_qa.core.strategy_selector import RulePreJudge, StrategySelector
 from base import Config
+from rag_qa.core.strategy_selector import RulePreJudge, StrategySelector
 
 
 def test_rule_prejudge():

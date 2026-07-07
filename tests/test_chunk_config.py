@@ -1,6 +1,5 @@
 """自适应 Chunk 配置 — ChunkConfigManager 单例测试"""
 import threading
-import pytest
 
 
 class TestChunkConfigManager:

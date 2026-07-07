@@ -1,20 +1,25 @@
-# -*- coding:utf-8 -*-
-from mysql_qa import MySQLClient, RedisClient, BM25Search
-from rag_qa import VectorStore, RAGSystem
-from base import logger, Config
-from base.health import SystemHealth, DegradationLevel
-from base.metrics import (
-    qa_query_total, qa_query_latency_seconds,
-    qa_llm_call_total, qa_bm25_hit_total,
-)
-from openai import (
-    OpenAI, APITimeoutError, APIConnectionError,
-    InternalServerError, RateLimitError,
-)
-import time
-import uuid
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
+
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    InternalServerError,
+    OpenAI,
+    RateLimitError,
+)
+
+from base import Config, logger
+from base.health import DegradationLevel, SystemHealth
+from base.metrics import (
+    qa_bm25_hit_total,
+    qa_llm_call_total,
+    qa_query_latency_seconds,
+    qa_query_total,
+)
+from mysql_qa import BM25Search, MySQLClient, RedisClient
+from rag_qa import RAGSystem, VectorStore
 
 
 class IntegratedQASystem:
@@ -24,7 +29,7 @@ class IntegratedQASystem:
         self._startup_time = time.time()
 
         # ---- Phase 1: Core infrastructure (must succeed) ----
-        from db_models.base import init_db, SessionLocal, Base, engine
+        from db_models.base import SessionLocal, engine
         self.engine = engine
         self.SessionLocal = SessionLocal
         self.executor = ThreadPoolExecutor(max_workers=self.config.THREAD_POOL_WORKERS)
@@ -122,8 +127,8 @@ class IntegratedQASystem:
             self.logger.warning("EvalService 初始化跳过: RAGSystem 不可用")
             return None
         try:
-            from repositories.eval_repo import EvalRepository
             from rag_qa.eval.eval_service import EvalService
+            from repositories.eval_repo import EvalRepository
             repo = EvalRepository(self.SessionLocal)
             service = EvalService(
                 config=self.config, repo=repo,

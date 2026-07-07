@@ -1,9 +1,10 @@
-# -*- coding:utf-8 -*-
 # 导入配置ini文件的解析库
 import configparser
 import json
+
 # 导入路径操作
 import os
+
 # 获取当前文件的绝对路径
 current_file_path = os.path.abspath(__file__)
 # 获取当前文件所在目录的绝对路径
@@ -29,7 +30,7 @@ def reset_config():
     _config_singleton = None
 
 
-class Config():
+class Config:
     """统一配置类，单一来源：config.ini"""
 
     _initialized = False
@@ -48,7 +49,7 @@ class Config():
         # 1. 创建配置文件解析器
         self.config = configparser.ConfigParser()
         # 2. 读取配置文件
-        with open(config_file, 'r', encoding='utf-8') as fp:
+        with open(config_file, encoding='utf-8') as fp:
             self.config.read_file(fp)
 
         # 3. 获取相关的配置（仅从 config.ini 读取，不再通过环境变量覆盖）
@@ -196,7 +197,7 @@ class Config():
 
         if missing:
             raise ValueError(
-                f"config.ini 中以下关键配置项为空，请填写后重试：\n  "
+                "config.ini 中以下关键配置项为空，请填写后重试：\n  "
                 + "\n  ".join(missing)
                 + "\n\n提示：可参考 config.ini.example 模板文件。"
             )

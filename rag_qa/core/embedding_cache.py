@@ -4,6 +4,7 @@ Query embedding cache — Redis-backed cache for dense/sparse query embeddings.
 Extracted from vector_store.py to keep each module under 300 lines.
 """
 import hashlib
+
 import numpy as np
 
 from base import logger

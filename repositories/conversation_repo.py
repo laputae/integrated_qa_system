@@ -1,7 +1,5 @@
-from typing import Optional
 
-from sqlalchemy import desc, and_, func, update
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, desc, func, update
 
 from db_models.conversation import Conversation
 
