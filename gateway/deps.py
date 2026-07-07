@@ -17,6 +17,11 @@ async def get_current_user(
     if is_whitelisted(request.url.path):
         return {"user_id": 0, "username": "anonymous", "tenant_id": 0}
 
+    # 中间件已解析过，直接复用
+    cached = request.scope.get("current_user")
+    if cached is not None:
+        return cached
+
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

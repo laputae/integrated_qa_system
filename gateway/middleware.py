@@ -171,6 +171,7 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                     "user_id": payload["user_id"],
                     "username": payload["username"],
                     "tenant_id": tenant_id,
+                    "jti": jti,
                 }
                 RequestContext.set(
                     user_id=payload["user_id"], tenant_id=tenant_id
