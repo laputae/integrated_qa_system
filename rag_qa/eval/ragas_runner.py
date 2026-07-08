@@ -100,12 +100,10 @@ def run_ragas(dataset: Dataset, config: Config, log=None) -> dict:
     ensure_ragas_importable()
 
     from ragas import evaluate
-    from ragas.metrics.collections import (
-        AnswerRelevancy,
-        ContextPrecision,
-        ContextRecall,
-        Faithfulness,
-    )
+    from ragas.metrics._answer_relevance import AnswerRelevancy
+    from ragas.metrics._context_precision import ContextPrecision
+    from ragas.metrics._context_recall import ContextRecall
+    from ragas.metrics._faithfulness import Faithfulness
 
     llm = create_langchain_llm(config)
     embeddings = create_langchain_embeddings(config)
