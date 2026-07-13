@@ -36,7 +36,7 @@ class OCRPPTLoader(BaseLoader):
     def ppt2text(self, filepath):
         # 打开指定路径的 PowerPoint 文件
         prs = Presentation(filepath)
-        print(f'prs-->{prs}')
+        print(f"prs-->{prs}")
         # 获取 OCR 功能的实例
         ocr = get_ocr()
         # 初始化一个空字符串，用于存储提取的文本内容
@@ -101,7 +101,9 @@ class OCRPPTLoader(BaseLoader):
         return resp  # 返回提取到的所有文本内容
 
 
-if __name__ == '__main__':
-    img_loader = OCRPPTLoader(filepath='/Users/ligang/Desktop/EduRAG课堂资料/codes/integrated_qa_system/rag_qa/samples/ocr_01.pptx')
+if __name__ == "__main__":
+    img_loader = OCRPPTLoader(
+        filepath="/Users/ligang/Desktop/EduRAG课堂资料/codes/integrated_qa_system/rag_qa/samples/ocr_01.pptx"
+    )
     doc = img_loader.load()
     print(doc)

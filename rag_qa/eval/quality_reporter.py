@@ -3,6 +3,7 @@ Quality reporting helpers for eval — trend analysis, regression detection, sta
 
 Extracted from eval_service.py to keep each module under 300 lines.
 """
+
 from base import Config
 
 
@@ -22,8 +23,12 @@ def check_regression(repo, config: Config) -> dict:
 
     current_value = values[0]
     if current_value is None:
-        return {"detected": False, "details": "最新评估无 faithfulness 分数",
-                "current_value": None, "threshold": threshold}
+        return {
+            "detected": False,
+            "details": "最新评估无 faithfulness 分数",
+            "current_value": None,
+            "threshold": threshold,
+        }
 
     if all(v is not None and v < threshold for v in values):
         return {
@@ -33,8 +38,7 @@ def check_regression(repo, config: Config) -> dict:
             "threshold": threshold,
         }
 
-    return {"detected": False, "details": None, "current_value": current_value,
-            "threshold": threshold}
+    return {"detected": False, "details": None, "current_value": current_value, "threshold": threshold}
 
 
 def get_quality_status(repo, config: Config) -> dict:

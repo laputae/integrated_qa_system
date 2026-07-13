@@ -6,6 +6,7 @@ LlamaIndex 文档处理器 - 混合模式
 - 索引构建：使用 LlamaIndex VectorStoreIndex 实现增量更新
 - 增量追踪：SQLite IngestionTracker + LlamaIndex ref_doc_id
 """
+
 import os
 from datetime import datetime
 
@@ -61,7 +62,7 @@ document_loaders = {
     ".pptx": OCRPPTLoader,
     ".jpg": OCRIMGLoader,
     ".png": OCRIMGLoader,
-    ".md": UnstructuredMarkdownLoader if UnstructuredMarkdownLoader is not None else TextLoader
+    ".md": UnstructuredMarkdownLoader if UnstructuredMarkdownLoader is not None else TextLoader,
 }
 
 
@@ -105,29 +106,21 @@ class LlamaIndexProcessor:
             collection_name=self.llamaindex_collection,
             db_name=conf.MILVUS_DATABASE_NAME,
             dim=get_dense_dim(conf.EMBEDDING_MODEL),
-            overwrite=False
+            overwrite=False,
         )
         self.logger.info(f"Milvus 向量存储初始化完成: {self.llamaindex_collection}")
 
     def _init_index(self):
         """初始化或加载 LlamaIndex 索引"""
         try:
-            storage_context = StorageContext.from_defaults(
-                vector_store=self.vector_store,
-                persist_dir=self.storage_dir
-            )
-            self.index = load_index_from_storage(
-                storage_context,
-                embed_model=self.embed_model
-            )
+            storage_context = StorageContext.from_defaults(vector_store=self.vector_store, persist_dir=self.storage_dir)
+            self.index = load_index_from_storage(storage_context, embed_model=self.embed_model)
             self.logger.info("从存储加载索引成功")
         except Exception as e:
             self.logger.warning(f"加载索引失败，创建新索引: {e}")
             storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
             self.index = VectorStoreIndex.from_documents(
-                [],
-                storage_context=storage_context,
-                embed_model=self.embed_model
+                [], storage_context=storage_context, embed_model=self.embed_model
             )
 
     def load_documents(self, directory_path):
@@ -168,8 +161,7 @@ class LlamaIndexProcessor:
 
         return documents
 
-    def process_documents(self, directory_path, parent_chunk_size=None,
-                          child_chunk_size=None, chunk_overlap=None):
+    def process_documents(self, directory_path, parent_chunk_size=None, child_chunk_size=None, chunk_overlap=None):
         """使用原始切分器进行两级切分（保持与原有代码完全一致）"""
         parent_chunk_size = parent_chunk_size or conf.PARENT_CHUNK_SIZE
         child_chunk_size = child_chunk_size or conf.CHILD_CHUNK_SIZE
@@ -178,14 +170,11 @@ class LlamaIndexProcessor:
         documents = self.load_documents(directory_path)
         self.logger.info(f"加载的文档数量: {len(documents)}")
 
-        child_chunks = self._split_documents(
-            documents, parent_chunk_size, child_chunk_size, chunk_overlap
-        )
+        child_chunks = self._split_documents(documents, parent_chunk_size, child_chunk_size, chunk_overlap)
         self.logger.info(f"子块数量: {len(child_chunks)}")
         return child_chunks
 
-    def _split_documents(self, documents, parent_chunk_size, child_chunk_size,
-                         chunk_overlap):
+    def _split_documents(self, documents, parent_chunk_size, child_chunk_size, chunk_overlap):
         """两级切分：父块→子块，支持自适应策略选择。
 
         策略来源: ChunkConfigManager 单例（支持运行时热更新）。
@@ -200,33 +189,35 @@ class LlamaIndexProcessor:
         for i, doc in enumerate(documents):
             file_path = doc.metadata.get("file_path", "")
             file_extension = os.path.splitext(file_path)[1].lower()
-            is_markdown = (file_extension == '.md')
+            is_markdown = file_extension == ".md"
 
             parent_strategy = MARKDOWN if is_markdown else config_mgr.get_strategy(file_extension)
             child_strategy = MARKDOWN if is_markdown else parent_strategy
 
             try:
                 parent_splitter = create_parent_splitter(
-                    parent_strategy, parent_chunk_size, chunk_overlap,
+                    parent_strategy,
+                    parent_chunk_size,
+                    chunk_overlap,
                     semantic_model_path=semantic_model_path,
                 )
             except Exception:
                 fallback = cfg.get("semantic_fallback_strategy", RECURSIVE)
-                self.logger.warning(
-                    "语义切分失败，回退到 %s 策略: %s", fallback, file_path
-                )
+                self.logger.warning("语义切分失败，回退到 %s 策略: %s", fallback, file_path)
                 parent_strategy = fallback
                 parent_splitter = create_parent_splitter(
-                    parent_strategy, parent_chunk_size, chunk_overlap,
+                    parent_strategy,
+                    parent_chunk_size,
+                    chunk_overlap,
                 )
 
             child_splitter = create_child_splitter(
-                child_strategy, child_chunk_size, chunk_overlap,
+                child_strategy,
+                child_chunk_size,
+                chunk_overlap,
             )
 
-            self.logger.info(
-                "处理文档: %s, 策略: %s", file_path, parent_strategy
-            )
+            self.logger.info("处理文档: %s, 策略: %s", file_path, parent_strategy)
 
             parent_docs = parent_splitter.split_documents([doc])
 
@@ -310,8 +301,7 @@ class LlamaIndexProcessor:
         unchanged_count = len(scan_result["unchanged"])
 
         self.logger.info(
-            f"扫描: {new_count} 新增, {modified_count} 修改, "
-            f"{deleted_count} 已删除, {unchanged_count} 未变"
+            f"扫描: {new_count} 新增, {modified_count} 修改, {deleted_count} 已删除, {unchanged_count} 未变"
         )
 
         # Step 2: 处理 DELETED 文件
@@ -340,8 +330,11 @@ class LlamaIndexProcessor:
             self.logger.info("无文件需要处理，跳过。")
             self.index.storage_context.persist(persist_dir=self.storage_dir)
             return {
-                "new": 0, "modified": 0, "deleted": deleted_count,
-                "unchanged": unchanged_count, "total_chunks": 0,
+                "new": 0,
+                "modified": 0,
+                "deleted": deleted_count,
+                "unchanged": unchanged_count,
+                "total_chunks": 0,
             }
 
         parent_chunk_size = parent_chunk_size or conf.PARENT_CHUNK_SIZE
@@ -349,16 +342,11 @@ class LlamaIndexProcessor:
         chunk_overlap = chunk_overlap or conf.CHUNK_OVERLAP
 
         # Step 4a: 加载文档
-        loaded_docs = self._load_selected_files(
-            [e["file_path"] for e in files_to_process]
-        )
-        self.logger.info(f"加载了 {len(loaded_docs)} 个文档，"
-                         f"来自 {len(files_to_process)} 个文件")
+        loaded_docs = self._load_selected_files([e["file_path"] for e in files_to_process])
+        self.logger.info(f"加载了 {len(loaded_docs)} 个文档，来自 {len(files_to_process)} 个文件")
 
         # Step 4b: 切分
-        child_chunks = self._split_documents(
-            loaded_docs, parent_chunk_size, child_chunk_size, chunk_overlap
-        )
+        child_chunks = self._split_documents(loaded_docs, parent_chunk_size, child_chunk_size, chunk_overlap)
         self.logger.info(f"生成了 {len(child_chunks)} 个子块")
 
         # Step 5: 按源文件分组，设置 ref_doc_id，批量插入
@@ -386,9 +374,7 @@ class LlamaIndexProcessor:
                     metadata={**chunk.metadata, "source_doc_id": doc_id},
                     id_=f"{doc_id}_chunk_{idx}",
                 )
-                node.relationships[NodeRelationship.SOURCE] = RelatedNodeInfo(
-                    node_id=doc_id
-                )
+                node.relationships[NodeRelationship.SOURCE] = RelatedNodeInfo(node_id=doc_id)
                 nodes.append(node)
 
             try:
@@ -429,10 +415,7 @@ class LlamaIndexProcessor:
         使用 LlamaIndex 索引添加文档（支持增量更新）
         documents: list[langchain_core.documents.Document]
         """
-        llama_docs = [
-            LlamaDocument(text=doc.page_content, metadata=doc.metadata)
-            for doc in documents
-        ]
+        llama_docs = [LlamaDocument(text=doc.page_content, metadata=doc.metadata) for doc in documents]
 
         for doc in llama_docs:
             self.index.insert(doc)
@@ -453,15 +436,14 @@ def load_documents_from_directory(directory_path):
     return processor.load_documents(directory_path)
 
 
-def process_documents(directory_path, parent_chunk_size=None,
-                     child_chunk_size=None, chunk_overlap=None):
+def process_documents(directory_path, parent_chunk_size=None, child_chunk_size=None, chunk_overlap=None):
     """兼容原有函数签名"""
     processor = LlamaIndexProcessor()
     return processor.process_documents(
         directory_path,
         parent_chunk_size=parent_chunk_size,
         child_chunk_size=child_chunk_size,
-        chunk_overlap=chunk_overlap
+        chunk_overlap=chunk_overlap,
     )
 
 
@@ -500,8 +482,7 @@ if __name__ == "__main__":
     for text, label in test_cases:
         doc = LangchainDocument(page_content=text, metadata={})
         score = estimate_document_quality(doc)
-        print(f"[{label}] score={score:.4f}, is_low={doc.metadata['is_low_quality']}, "
-              f"len={len(text)}")
+        print(f"[{label}] score={score:.4f}, is_low={doc.metadata['is_low_quality']}, len={len(text)}")
 
     print()
 

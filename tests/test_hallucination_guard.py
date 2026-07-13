@@ -1,4 +1,5 @@
 """Tests for HallucinationGuard: claim decomposition and NLI verification."""
+
 import pytest
 
 
@@ -8,6 +9,7 @@ class TestClaimDecomposition:
     @pytest.fixture
     def guard(self):
         from rag_qa.core.nli_guard import HallucinationGuard
+
         return HallucinationGuard
 
     def test_split_chinese_sentences(self, guard):
@@ -48,6 +50,7 @@ class TestGuardIntegration:
     def guard_instance(self):
         try:
             from rag_qa.core.nli_guard import HallucinationGuard
+
             return HallucinationGuard(device="cpu")
         except Exception:
             pytest.skip("HallucinationGuard model not available")
@@ -78,6 +81,7 @@ class TestGuardIntegration:
 class TestResultDataclasses:
     def test_claim_result_fields(self):
         from rag_qa.core.nli_guard import ClaimResult
+
         r = ClaimResult(
             claim="test",
             entailment_score=0.8,
@@ -90,6 +94,7 @@ class TestResultDataclasses:
 
     def test_hallucination_result_fields(self):
         from rag_qa.core.nli_guard import HallucinationResult
+
         r = HallucinationResult(
             is_hallucinated=True,
             score=0.4,

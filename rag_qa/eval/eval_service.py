@@ -19,8 +19,7 @@ from rag_qa.eval.ragas_runner import (
 class EvalService:
     """Evaluation automation pipeline + continuous quality monitoring."""
 
-    def __init__(self, config: Config, repo, rag_system, llm_client, vector_store,
-                 executor=None):
+    def __init__(self, config: Config, repo, rag_system, llm_client, vector_store, executor=None):
         self.config = config
         self.repo = repo
         self.rag_system = rag_system
@@ -35,10 +34,13 @@ class EvalService:
     # Public API
     # ================================================================
 
-    def run_evaluation(self, dataset: list | None = None,
-                       triggered_by: str = "manual",
-                       chunk_config_snapshot: dict | None = None,
-                       run_id: int | None = None) -> dict:
+    def run_evaluation(
+        self,
+        dataset: list | None = None,
+        triggered_by: str = "manual",
+        chunk_config_snapshot: dict | None = None,
+        run_id: int | None = None,
+    ) -> dict:
         """Run a full RAGAS evaluation synchronously (call via asyncio.to_thread)."""
         start_time = time.time()
 
@@ -61,9 +63,7 @@ class EvalService:
                 chunk_config_snapshot=chunk_config_snapshot,
             )
         run_id = run.id
-        self.logger.info(
-            f"[Eval] 开始评估 run_id={run_id}, 问题数={len(dataset)}, 触发方式={triggered_by}"
-        )
+        self.logger.info(f"[Eval] 开始评估 run_id={run_id}, 问题数={len(dataset)}, 触发方式={triggered_by}")
 
         try:
             # 3. Run each question through the production pipeline
@@ -76,9 +76,7 @@ class EvalService:
                 try:
                     answer, contexts = self._run_through_pipeline(question, source_filter)
                 except Exception as e:
-                    self.logger.warning(
-                        f"[Eval] 管线执行失败 (问题: '{question[:30]}...'): {e}"
-                    )
+                    self.logger.warning(f"[Eval] 管线执行失败 (问题: '{question[:30]}...'): {e}")
                     answer = None
                     contexts = []
 
@@ -100,8 +98,7 @@ class EvalService:
             # 5. Write per-question scores back
             for i, result_id in enumerate(result_ids):
                 scores = {}
-                for metric_name in ["faithfulness", "answer_relevancy",
-                                     "context_precision", "context_recall"]:
+                for metric_name in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
                     if metric_name in ragas_scores and i < len(ragas_scores[metric_name]):
                         scores[metric_name] = float(ragas_scores[metric_name][i])
                 self.repo.update_result_scores(result_id, scores)
@@ -109,8 +106,7 @@ class EvalService:
             # 6. Compute aggregate metrics
             total = len(dataset)
             aggregates = {}
-            for metric_name in ["faithfulness", "answer_relevancy",
-                                "context_precision", "context_recall"]:
+            for metric_name in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
                 if metric_name in ragas_scores and ragas_scores[metric_name]:
                     values = [v for v in ragas_scores[metric_name] if v is not None]
                     aggregates[metric_name] = float(sum(values) / len(values)) if values else None
@@ -148,15 +144,22 @@ class EvalService:
             "elapsed_seconds": round(elapsed, 1),
         }
 
-    async def run_evaluation_async(self, dataset: list | None = None,
-                                   triggered_by: str = "manual",
-                                   chunk_config_snapshot: dict | None = None,
-                                   run_id: int | None = None) -> dict:
+    async def run_evaluation_async(
+        self,
+        dataset: list | None = None,
+        triggered_by: str = "manual",
+        chunk_config_snapshot: dict | None = None,
+        run_id: int | None = None,
+    ) -> dict:
         """Async wrapper for run_evaluation."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             self.executor,
-            self.run_evaluation, dataset, triggered_by, chunk_config_snapshot, run_id,
+            self.run_evaluation,
+            dataset,
+            triggered_by,
+            chunk_config_snapshot,
+            run_id,
         )
 
     # ================================================================
@@ -228,14 +231,11 @@ class EvalService:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
 
-    def _run_through_pipeline(self, question: str,
-                               source_filter: str | None = None) -> tuple[str | None, list[str]]:
+    def _run_through_pipeline(self, question: str, source_filter: str | None = None) -> tuple[str | None, list[str]]:
         """Run a question through the production RAG pipeline."""
         # Step 1: Retrieve contexts
         try:
-            context_docs = self.rag_system.retrieve_and_merge(
-                question, source_filter=source_filter
-            )
+            context_docs = self.rag_system.retrieve_and_merge(question, source_filter=source_filter)
             contexts = [doc.page_content for doc in context_docs] if context_docs else []
         except Exception as e:
             self.logger.warning(f"[Eval] 检索失败 (问题: '{question[:30]}...'): {e}")
@@ -259,4 +259,5 @@ class EvalService:
     def _compute_trend_direction(self) -> str:
         """Compute trend direction from the last 5 faithfulness values."""
         from rag_qa.eval.quality_reporter import _compute_trend_direction
+
         return _compute_trend_direction(self.repo)

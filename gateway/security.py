@@ -70,9 +70,7 @@ class SecurityFilter:
 
     @staticmethod
     def validate_uuid(value: str) -> tuple[bool, str | None]:
-        uuid_pattern = re.compile(
-            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        )
+        uuid_pattern = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
         if not uuid_pattern.match(value):
             return False, "Invalid UUID format"
         return True, None

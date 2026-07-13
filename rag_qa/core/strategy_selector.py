@@ -34,9 +34,7 @@ class RulePreJudge:
 
     COMPLEX_HOWTO = re.compile(r"如何|怎么|怎样")
 
-    COMPLEX_TECH_TERMS = re.compile(
-        r"部署|实现|优化|调优|配置|搭建|架构|设计|开发|集成|迁移|监控|调试"
-    )
+    COMPLEX_TECH_TERMS = re.compile(r"部署|实现|优化|调优|配置|搭建|架构|设计|开发|集成|迁移|监控|调试")
 
     def prejudge(self, query: str) -> str | None:
         q = query.strip()
@@ -74,9 +72,7 @@ class RulePreJudge:
 
 class StrategySelector:
     def __init__(self, redis_client=None, llm_client=None):
-        self.client = llm_client or OpenAI(
-            api_key=Config().DASHSCOPE_API_KEY,
-            base_url=Config().DASHSCOPE_BASE_URL)
+        self.client = llm_client or OpenAI(api_key=Config().DASHSCOPE_API_KEY, base_url=Config().DASHSCOPE_BASE_URL)
         # 获取策略选择提示模板
         self.strategy_prompt_template = self._get_strategy_prompt()
         # 规则预判器
@@ -96,9 +92,7 @@ class StrategySelector:
     def _cache_set(self, query_hash: str, strategy: str):
         if not self.redis_client:
             return
-        self.redis_client.set_data(
-            f"strategy:{query_hash}", strategy, ttl=conf.STRATEGY_CACHE_TTL
-        )
+        self.redis_client.set_data(f"strategy:{query_hash}", strategy, ttl=conf.STRATEGY_CACHE_TTL)
 
     def call_dashscope(self, prompt):
         max_retries = conf.LLM_MAX_RETRIES
@@ -116,14 +110,18 @@ class StrategySelector:
                     temperature=0.1,
                 )
                 return completion.choices[0].message.content if completion.choices else "直接检索"
-            except (APITimeoutError, APIConnectionError,
-                    InternalServerError, RateLimitError,
-                    ConnectionError, TimeoutError) as e:
+            except (
+                APITimeoutError,
+                APIConnectionError,
+                InternalServerError,
+                RateLimitError,
+                ConnectionError,
+                TimeoutError,
+            ) as e:
                 if attempt < max_retries - 1:
-                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    delay = min(base_delay * (2**attempt), max_delay)
                     logger.warning(
-                        f"DashScope API 调用失败 (attempt {attempt+1}/{max_retries}): {e}，"
-                        f"{delay:.1f}s 后重试..."
+                        f"DashScope API 调用失败 (attempt {attempt + 1}/{max_retries}): {e}，{delay:.1f}s 后重试..."
                     )
                     time.sleep(delay)
                 else:
@@ -132,7 +130,6 @@ class StrategySelector:
             except Exception as e:
                 logger.error(f"DashScope API 调用失败（不可重试）: {e}")
                 return "直接检索"
-
 
     def _get_strategy_prompt(self):
         return PromptTemplate(
@@ -205,7 +202,7 @@ class StrategySelector:
         return strategy
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     ss = StrategySelector()
     # print(f'ss.clinet--->{ss.client}')
     # result = ss.call_dashscope(prompt="你是谁")

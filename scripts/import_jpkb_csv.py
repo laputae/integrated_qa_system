@@ -16,20 +16,24 @@ from db_models.base import SessionLocal, engine
 
 CSV_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "mysql_qa", "data", "JP学科知识问答.csv",
+    "mysql_qa",
+    "data",
+    "JP学科知识问答.csv",
 )
 
 
 def create_table_if_needed():
     with engine.connect() as conn:
-        conn.execute(text(
-            "CREATE TABLE IF NOT EXISTS jpkb ("
-            "  id INT AUTO_INCREMENT PRIMARY KEY,"
-            "  subject_name VARCHAR(20) NOT NULL,"
-            "  question VARCHAR(2000) NOT NULL,"
-            "  answer TEXT NOT NULL"
-            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-        ))
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS jpkb ("
+                "  id INT AUTO_INCREMENT PRIMARY KEY,"
+                "  subject_name VARCHAR(20) NOT NULL,"
+                "  question VARCHAR(2000) NOT NULL,"
+                "  answer TEXT NOT NULL"
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            )
+        )
         conn.commit()
     print("jpkb 表已就绪")
 
@@ -64,10 +68,7 @@ def import_csv():
 
             try:
                 session.execute(
-                    text(
-                        "INSERT INTO jpkb (subject_name, question, answer) "
-                        "VALUES (:s, :q, :a)"
-                    ),
+                    text("INSERT INTO jpkb (subject_name, question, answer) VALUES (:s, :q, :a)"),
                     {"s": subject, "q": question, "a": answer},
                 )
                 inserted += 1

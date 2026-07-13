@@ -1,4 +1,3 @@
-
 from sqlalchemy import and_
 
 from db_models.user import User
@@ -22,9 +21,7 @@ class UserRepository:
 
     def get_by_username(self, username: str, tenant_id: int) -> User | None:
         with self.session_factory() as session:
-            return session.query(User).filter(
-                and_(User.username == username, User.tenant_id == tenant_id)
-            ).first()
+            return session.query(User).filter(and_(User.username == username, User.tenant_id == tenant_id)).first()
 
     def get_by_id(self, user_id: int) -> User | None:
         with self.session_factory() as session:
@@ -32,9 +29,10 @@ class UserRepository:
 
     def username_exists(self, username: str, tenant_id: int) -> bool:
         with self.session_factory() as session:
-            return session.query(User).filter(
-                and_(User.username == username, User.tenant_id == tenant_id)
-            ).first() is not None
+            return (
+                session.query(User).filter(and_(User.username == username, User.tenant_id == tenant_id)).first()
+                is not None
+            )
 
     def is_admin_user(self, user_id: int) -> bool:
         user = self.get_by_id(user_id)
@@ -42,9 +40,7 @@ class UserRepository:
 
     def set_admin(self, username: str, tenant_id: int, is_admin: bool = True) -> bool:
         with self.session_factory() as session:
-            user = session.query(User).filter(
-                and_(User.username == username, User.tenant_id == tenant_id)
-            ).first()
+            user = session.query(User).filter(and_(User.username == username, User.tenant_id == tenant_id)).first()
             if not user:
                 return False
             user.is_admin = is_admin

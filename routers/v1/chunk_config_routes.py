@@ -1,4 +1,5 @@
 """Chunk config admin endpoints."""
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from db_models.base import SessionLocal
@@ -12,6 +13,7 @@ router = APIRouter()
 @router.get("/api/chunk-config", response_model=ChunkConfigResponse)
 async def get_chunk_config(user: dict = Depends(require_auth)):
     from base.chunk_config import ChunkConfigManager
+
     mgr = ChunkConfigManager()
     cfg = mgr.get_config()
     return ChunkConfigResponse(
@@ -34,6 +36,7 @@ async def update_chunk_config(update: ChunkConfigUpdate, user: dict = Depends(re
 
     from base import logger
     from base.chunk_config import ChunkConfigManager
+
     mgr = ChunkConfigManager()
     updates = {k: v for k, v in update.model_dump(exclude_none=True).items()}
     mgr.update_config(updates)
@@ -59,6 +62,7 @@ async def reload_chunk_config(user: dict = Depends(require_auth)):
 
     from base import logger
     from base.chunk_config import ChunkConfigManager
+
     mgr = ChunkConfigManager()
     mgr.reload()
     logger.info("Chunk config reloaded from config.ini by user %s", user["username"])

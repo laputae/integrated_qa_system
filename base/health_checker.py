@@ -3,6 +3,7 @@ HealthChecker — performs actual dependency probes for each component.
 
 Extracted from health.py to keep each module under 300 lines.
 """
+
 import time
 
 from base import Config, logger
@@ -33,6 +34,7 @@ class HealthChecker:
         start = time.time()
         try:
             from sqlalchemy import text
+
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             result.status = HealthStatus.HEALTHY
@@ -48,7 +50,7 @@ class HealthChecker:
 
     def check_redis(self, redis_client) -> ComponentHealth:
         result = ComponentHealth(name="redis")
-        if redis_client is None or getattr(redis_client, 'client', None) is None:
+        if redis_client is None or getattr(redis_client, "client", None) is None:
             result.status = HealthStatus.UNHEALTHY
             result.error_message = "Redis client is None (init failed)"
             result.last_checked = time.time()
@@ -70,7 +72,7 @@ class HealthChecker:
 
     def check_milvus(self, vector_store) -> ComponentHealth:
         result = ComponentHealth(name="milvus")
-        if vector_store is None or getattr(vector_store, 'client', None) is None:
+        if vector_store is None or getattr(vector_store, "client", None) is None:
             result.status = HealthStatus.UNHEALTHY
             result.error_message = "Milvus client is None (init failed)"
             result.last_checked = time.time()
@@ -103,7 +105,7 @@ class HealthChecker:
             return result
         # Verify the client object is usable without making a paid API call
         try:
-            api_key = getattr(openai_client, 'api_key', None)
+            api_key = getattr(openai_client, "api_key", None)
             if not api_key:
                 result.status = HealthStatus.UNHEALTHY
                 result.error_message = "API key is empty"
@@ -119,7 +121,7 @@ class HealthChecker:
 
     def check_embedding(self, vector_store) -> ComponentHealth:
         result = ComponentHealth(name="embedding")
-        if vector_store is None or getattr(vector_store, 'embedding_function', None) is None:
+        if vector_store is None or getattr(vector_store, "embedding_function", None) is None:
             result.status = HealthStatus.UNHEALTHY
             result.error_message = "Embedding function is None (init failed)"
             result.last_checked = time.time()
@@ -143,7 +145,7 @@ class HealthChecker:
 
     def check_reranker(self, vector_store) -> ComponentHealth:
         result = ComponentHealth(name="reranker")
-        if vector_store is None or getattr(vector_store, 'reranker', None) is None:
+        if vector_store is None or getattr(vector_store, "reranker", None) is None:
             result.status = HealthStatus.UNHEALTHY
             result.error_message = "Reranker model is None (init failed)"
             result.last_checked = time.time()
@@ -165,7 +167,7 @@ class HealthChecker:
 
     def check_classifier(self, rag_system) -> ComponentHealth:
         result = ComponentHealth(name="classifier")
-        if rag_system is None or getattr(rag_system, 'query_classifier', None) is None:
+        if rag_system is None or getattr(rag_system, "query_classifier", None) is None:
             result.status = HealthStatus.UNHEALTHY
             result.error_message = "Query classifier is None (init failed)"
             result.last_checked = time.time()
@@ -223,7 +225,7 @@ class HealthChecker:
             result.last_checked = time.time()
             return result
 
-        guard = getattr(rag_system, 'hallucination_guard', None)
+        guard = getattr(rag_system, "hallucination_guard", None)
         if guard is None:
             result.status = HealthStatus.DEGRADED
             result.error_message = "HallucinationGuard 未启用 (hallucination_guard.enabled=false)"

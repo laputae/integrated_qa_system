@@ -38,7 +38,9 @@ class OCRIMGLoader(BaseLoader):
         return resp
 
 
-if __name__ == '__main__':
-    img_loader = OCRIMGLoader(img_path='/Users/ligang/Desktop/EduRAG课堂资料/codes/integrated_qa_system/rag_qa/samples/ocr_04.png')
+if __name__ == "__main__":
+    img_loader = OCRIMGLoader(
+        img_path="/Users/ligang/Desktop/EduRAG课堂资料/codes/integrated_qa_system/rag_qa/samples/ocr_04.png"
+    )
     doc = img_loader.load()
     print(doc)

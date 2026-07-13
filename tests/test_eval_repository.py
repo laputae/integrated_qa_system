@@ -1,4 +1,5 @@
 """评估自动化管道 — Repository Tests"""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -24,8 +25,7 @@ class TestEvalRepositoryRun:
         mock_run = MagicMock()
         mock_session.query.return_value.filter.return_value.first.return_value = mock_run
 
-        metrics = {"faithfulness": 0.85, "answer_relevancy": 0.90,
-                   "context_precision": 0.78, "context_recall": 0.82}
+        metrics = {"faithfulness": 0.85, "answer_relevancy": 0.90, "context_precision": 0.78, "context_recall": 0.82}
         eval_repo.complete_run(run_id=1, metrics=metrics, total_questions=10)
 
         assert mock_run.status == "completed"
@@ -73,12 +73,7 @@ class TestEvalRepositoryRun:
     def test_get_recent_metrics(self, eval_repo, mock_session_factory):
         _, mock_session = mock_session_factory
         (
-            mock_session.query.return_value
-            .filter.return_value
-            .filter.return_value
-            .order_by.return_value
-            .limit.return_value
-            .all.return_value
+            mock_session.query.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value
         ) = [(0.9,), (0.85,), (0.88,)]
         values = eval_repo.get_recent_metrics("faithfulness", limit=3)
         assert values == [0.9, 0.85, 0.88]
@@ -92,8 +87,12 @@ class TestEvalRepositoryResult:
     def test_insert_result(self, eval_repo, mock_session_factory):
         _, mock_session = mock_session_factory
         eval_repo.insert_result(
-            run_id=1, question="Q?", ground_truth="A",
-            answer="Answer", contexts=["ctx1", "ctx2"], source_filter="ai",
+            run_id=1,
+            question="Q?",
+            ground_truth="A",
+            answer="Answer",
+            contexts=["ctx1", "ctx2"],
+            source_filter="ai",
         )
         mock_session.add.assert_called_once()
         mock_session.commit.assert_called()
@@ -110,8 +109,7 @@ class TestEvalRepositoryResult:
         mock_result = MagicMock()
         mock_session.query.return_value.filter.return_value.first.return_value = mock_result
 
-        scores = {"faithfulness": 0.95, "answer_relevancy": 0.88,
-                  "context_precision": 0.76, "context_recall": 0.81}
+        scores = {"faithfulness": 0.95, "answer_relevancy": 0.88, "context_precision": 0.76, "context_recall": 0.81}
         eval_repo.update_result_scores(result_id=1, scores=scores)
 
         assert mock_result.faithfulness == 0.95
@@ -125,11 +123,10 @@ class TestEvalRepositoryResult:
 
     def test_get_result_ids_for_run(self, eval_repo, mock_session_factory):
         _, mock_session = mock_session_factory
-        (
-            mock_session.query.return_value
-            .filter.return_value
-            .order_by.return_value
-            .all.return_value
-        ) = [(1,), (2,), (3,)]
+        (mock_session.query.return_value.filter.return_value.order_by.return_value.all.return_value) = [
+            (1,),
+            (2,),
+            (3,),
+        ]
         ids = eval_repo.get_result_ids_for_run(run_id=1)
         assert ids == [1, 2, 3]

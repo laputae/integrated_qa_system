@@ -22,9 +22,9 @@ conf = Config()
 
 def _sparse_to_dict(sparse_row) -> dict:
     """Convert sparse vector to dict, handling csr_matrix, dict, and empty formats."""
-    if hasattr(sparse_row, 'indices'):
+    if hasattr(sparse_row, "indices"):
         # csr_matrix (BGEM3 output)
-        indices = sparse_row.indices if hasattr(sparse_row, 'indices') else sparse_row.col
+        indices = sparse_row.indices if hasattr(sparse_row, "indices") else sparse_row.col
         return dict(zip(indices, sparse_row.data))
     elif isinstance(sparse_row, dict):
         # Redis JSON round-trip converts int keys to strings — convert them back
@@ -34,18 +34,21 @@ def _sparse_to_dict(sparse_row) -> dict:
     else:
         return {}
 
+
 # Alias for backward compatibility within this module
 _sparse_row_to_dict = _sparse_to_dict
 
 
 class VectorStore:
     # 初始化方法，设置向量存储的基本参数
-    def __init__(self,
-                 collection_name=conf.MILVUS_COLLECTION_NAME,
-                 host=conf.MILVUS_HOST,
-                 port=conf.MILVUS_PORT,
-                 database=conf.MILVUS_DATABASE_NAME,
-                 redis_client=None):
+    def __init__(
+        self,
+        collection_name=conf.MILVUS_COLLECTION_NAME,
+        host=conf.MILVUS_HOST,
+        port=conf.MILVUS_PORT,
+        database=conf.MILVUS_DATABASE_NAME,
+        redis_client=None,
+    ):
         # 设置 Milvus 集合名称
         self.collection_name = collection_name
         # 设置 Milvus 主机地址
@@ -63,7 +66,7 @@ class VectorStore:
         # 日志提醒使用的是什么设备
         self.logger.info(f"使用设备：{self.device}")
         # 初始化 BGE-Reranker 模型，用于重排序检索结果
-        reranker_path = os.path.join(rag_qa_path, 'models', 'bge-reranker-large')
+        reranker_path = os.path.join(rag_qa_path, "models", "bge-reranker-large")
         self.reranker = CrossEncoder(reranker_path, device=self.device)
         if self.device == "cuda":
             self.reranker.model.half()
@@ -73,14 +76,12 @@ class VectorStore:
         self.logger.info(f"使用嵌入模型: {model_name}")
         self.embedding_function = create_milvus_model(
             model_name,
-            model_path=os.path.join(rag_qa_path, 'models', model_name),
+            model_path=os.path.join(rag_qa_path, "models", model_name),
             device=self.device,
         )
         self.dense_dim = get_dense_dim(model_name)
         if not supports_sparse(model_name):
-            self.logger.warning(
-                f"模型 '{model_name}' 不支持稀疏向量，混合检索将降级为纯稠密检索"
-            )
+            self.logger.warning(f"模型 '{model_name}' 不支持稀疏向量，混合检索将降级为纯稠密检索")
         # 初始化 Milvus 客户端
         self.client = MilvusClient(
             uri=f"http://{self.host}:{self.port}",
@@ -121,7 +122,7 @@ class VectorStore:
                 index_name="dense_index",
                 index_type="IVF_FLAT",
                 metric_type="IP",
-                params={"nlist": 128}
+                params={"nlist": 128},
             )
             # 为稀疏向量字段添加 SPARSE_INVERTED_INDEX 索引
             index_params.add_index(
@@ -129,7 +130,7 @@ class VectorStore:
                 index_name="sparse_index",
                 index_type="SPARSE_INVERTED_INDEX",
                 metric_type="IP",
-                params={"drop_ratio_build": 0.2}
+                params={"drop_ratio_build": 0.2},
             )
 
             self.client.create_collection(
@@ -169,18 +170,20 @@ class VectorStore:
 
         data = []
         for i, doc in enumerate(documents):
-            text_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
+            text_hash = hashlib.md5(doc.page_content.encode("utf-8")).hexdigest()
             sparse_vector = embeddings["sparse"][i]
-            data.append({
-                "id": text_hash,
-                "text": doc.page_content,
-                "dense_vector": embeddings["dense"][i],
-                "sparse_vector": sparse_vector,
-                "parent_id": doc.metadata["parent_id"],
-                "parent_content": doc.metadata["parent_content"],
-                "source": doc.metadata.get("source", "unknown"),
-                "timestamp": doc.metadata.get("timestamp", "unknown")
-            })
+            data.append(
+                {
+                    "id": text_hash,
+                    "text": doc.page_content,
+                    "dense_vector": embeddings["dense"][i],
+                    "sparse_vector": sparse_vector,
+                    "parent_id": doc.metadata["parent_id"],
+                    "parent_content": doc.metadata["parent_content"],
+                    "source": doc.metadata.get("source", "unknown"),
+                    "timestamp": doc.metadata.get("timestamp", "unknown"),
+                }
+            )
 
         if data:
             self.client.upsert(collection_name=self.collection_name, data=data)
@@ -208,7 +211,7 @@ class VectorStore:
                 search_params={"metric_type": "IP", "params": {"nprobe": 10}},
                 limit=k,
                 filter=filter_expr,
-                output_fields=["text", "parent_id", "parent_content", "source", "timestamp"]
+                output_fields=["text", "parent_id", "parent_content", "source", "timestamp"],
             )[0]
         else:
             # 创建稠密向量搜索请求
@@ -217,7 +220,7 @@ class VectorStore:
                 anns_field="dense_vector",
                 param={"metric_type": "IP", "params": {"nprobe": 10}},
                 limit=k,
-                expr=filter_expr
+                expr=filter_expr,
             )
             # 创建稀疏向量搜索请求
             sparse_request = AnnSearchRequest(
@@ -225,7 +228,7 @@ class VectorStore:
                 anns_field="sparse_vector",
                 param={"metric_type": "IP", "params": {}},
                 limit=k,
-                expr=filter_expr
+                expr=filter_expr,
             )
             ranker = WeightedRanker(1.0, 0.7)
             results = self.client.hybrid_search(
@@ -233,7 +236,7 @@ class VectorStore:
                 reqs=[dense_request, sparse_request],
                 ranker=ranker,
                 limit=k,
-                output_fields=["text", "parent_id", "parent_content", "source", "timestamp"]
+                output_fields=["text", "parent_id", "parent_content", "source", "timestamp"],
             )[0]
 
         sub_chunks = [self._doc_from_hit(hit["entity"]) for hit in results]
@@ -260,8 +263,7 @@ class VectorStore:
         # Reranker 分数阈值过滤
         threshold = self.reranker_score_threshold
         if threshold > 0.0:
-            kept = [doc for doc in ranked_parent_docs
-                    if doc.metadata.get("rerank_score", 0.0) >= threshold]
+            kept = [doc for doc in ranked_parent_docs if doc.metadata.get("rerank_score", 0.0) >= threshold]
             filtered_count = len(ranked_parent_docs) - len(kept)
             if filtered_count > 0:
                 self.logger.info(
@@ -290,6 +292,6 @@ class VectorStore:
                 "parent_id": hit.get("parent_id"),
                 "parent_content": hit.get("parent_content"),
                 "source": hit.get("source"),
-                "timestamp": hit.get("timestamp")
-            }
+                "timestamp": hit.get("timestamp"),
+            },
         )

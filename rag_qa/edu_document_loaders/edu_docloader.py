@@ -52,6 +52,7 @@ class OCRDOCLoader(BaseLoader):
         # print(f'doc-->{doc}')  # 输出读取到的文档信息
         # 定义一个空字符串用于存储最终的文本内容
         resp = ""
+
         # 定义一个迭代器，用于遍历文档中的块（段落、表格等）
         def iter_block_items(parent):
             # 判断parent对象类型，如果是Document类型，则获取其元素
@@ -75,8 +76,7 @@ class OCRDOCLoader(BaseLoader):
         # print(f'doc.paragraphs-->{doc.paragraphs}')
         # print(f'doc.tables-->{doc.tables}')
         # 创建进度条，表示文档处理的进度
-        b_unit = tqdm(total=len(doc.paragraphs) + len(doc.tables),
-                      desc="OCRDOCLoader block index: 0")
+        b_unit = tqdm(total=len(doc.paragraphs) + len(doc.tables), desc="OCRDOCLoader block index: 0")
 
         # 遍历文档中的所有块（段落和表格）
         for i, block in enumerate(iter_block_items(doc)):
@@ -88,10 +88,10 @@ class OCRDOCLoader(BaseLoader):
             if isinstance(block, Paragraph):
                 resp += block.text.strip() + "\n"  # 将段落文本加入到返回字符串中
                 # 获取段落中的所有图片
-                images = block._element.xpath('.//pic:pic')
+                images = block._element.xpath(".//pic:pic")
                 for image in images:
                     # 遍历图片，获取图片ID
-                    for img_id in image.xpath('.//a:blip/@r:embed'):
+                    for img_id in image.xpath(".//a:blip/@r:embed"):
                         part = doc.part.related_parts[img_id]  # 根据图片ID获取图片对象
                         if isinstance(part, ImagePart):  # 如果该部分是图片
                             # BytesIO 是 Python 内置的 io 模块中的一个类，用于在内存中读写二进制数据
@@ -115,8 +115,7 @@ class OCRDOCLoader(BaseLoader):
         return resp
 
 
-
-if __name__ == '__main__':
-    docx_loader = OCRDOCLoader(filepath='/Users/ligang/PycharmProjects/LLM/EducationRAG/samples/ocr_02.docx')
+if __name__ == "__main__":
+    docx_loader = OCRDOCLoader(filepath="/Users/ligang/PycharmProjects/LLM/EducationRAG/samples/ocr_02.docx")
     doc = docx_loader.load()
     print(doc)

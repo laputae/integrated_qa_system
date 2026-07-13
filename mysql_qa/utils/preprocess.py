@@ -15,5 +15,6 @@ def preprocess_text(text):
         # 返回空列表
         return []
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     print(preprocess_text(text="黑马程序员"))

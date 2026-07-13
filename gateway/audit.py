@@ -26,13 +26,19 @@ class AuditLogger:
         if self._repo is None:
             from db_models.base import SessionLocal
             from repositories.audit_repo import AuditRepository
+
             self._repo = AuditRepository(SessionLocal)
         return self._repo
 
-    def log(self, event_type: AuditEventType, user_id: int | None = None,
-            tenant_id: int | None = None,
-            ip_address: str | None = None, user_agent: str | None = None,
-            detail: dict | None = None):
+    def log(
+        self,
+        event_type: AuditEventType,
+        user_id: int | None = None,
+        tenant_id: int | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        detail: dict | None = None,
+    ):
         try:
             self.repo.insert(
                 user_id=user_id,

@@ -19,7 +19,7 @@ class QueryClassifier:
         # 初始化模型路径
         self.model_path = model_path
         # 加载 BERT 分词器
-        bert_path = os.path.join(rag_qa_path, 'models', 'bert-base-chinese')
+        bert_path = os.path.join(rag_qa_path, "models", "bert-base-chinese")
         # self.tokenizer = BertTokenizer.from_pretrained("../models/bert-base-chinese")
         self.tokenizer = BertTokenizer.from_pretrained(bert_path)
         # 初始化模型
@@ -44,7 +44,7 @@ class QueryClassifier:
             logger.info(f"加载模型: {self.model_path}")
         else:
             # 初始化新模型
-            bert_path = os.path.join(rag_qa_path, 'models', 'bert-base-chinese')
+            bert_path = os.path.join(rag_qa_path, "models", "bert-base-chinese")
             self.model = BertForSequenceClassification.from_pretrained(bert_path, num_labels=2)
             # print(f'self.model--》{self.model}')
             # 将模型移到指定设备
@@ -93,27 +93,31 @@ class QueryClassifier:
         # print(f'验证集样本的个数--》{len(train_dataset)}')
         # 设置训练参数
         training_args = TrainingArguments(
-            output_dir="./bert_results",# 模型（检查点）以及日志保存的路径等，
-            num_train_epochs=3, # 训练的轮次
-            per_device_train_batch_size=8, # 训练的批次
-            per_device_eval_batch_size=8, # 验证批次
-            warmup_steps=20, # 学习率预热的步数
-            weight_decay=0.01, # 权重衰减系数
-            logging_dir="./bert_logs", # 日志保存路径:如果想生成这个文件夹，需要安装tensorboard
-            logging_steps=10, # 每隔多少步打印日志
-            evaluation_strategy="epoch", # 每轮都进行评估
-            save_strategy="epoch", # 每轮都进行检查点的模型保存
-            load_best_model_at_end=True, # 加载最优的模型
+            output_dir="./bert_results",  # 模型（检查点）以及日志保存的路径等，
+            num_train_epochs=3,  # 训练的轮次
+            per_device_train_batch_size=8,  # 训练的批次
+            per_device_eval_batch_size=8,  # 验证批次
+            warmup_steps=20,  # 学习率预热的步数
+            weight_decay=0.01,  # 权重衰减系数
+            logging_dir="./bert_logs",  # 日志保存路径:如果想生成这个文件夹，需要安装tensorboard
+            logging_steps=10,  # 每隔多少步打印日志
+            evaluation_strategy="epoch",  # 每轮都进行评估
+            save_strategy="epoch",  # 每轮都进行检查点的模型保存
+            load_best_model_at_end=True,  # 加载最优的模型
             save_total_limit=1,  # 只保存一个检查点，其他被覆盖
-            metric_for_best_model="eval_loss", # 评估最优模型的指标（验证集损失）
+            metric_for_best_model="eval_loss",  # 评估最优模型的指标（验证集损失）
             fp16=False,  # 禁用混合精度
         )
 
         # print(f'training_args--》{training_args}')
         # 初始化Trainer
-        trainer = Trainer(model=self.model, args=training_args,
-                          train_dataset=train_dataset, eval_dataset=val_dataset,
-                          compute_metrics=self.compute_metrics)
+        trainer = Trainer(
+            model=self.model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=val_dataset,
+            compute_metrics=self.compute_metrics,
+        )
         # 开始训练模型
         logger.info("开始训练BERT模型")
         trainer.train()
@@ -123,16 +127,9 @@ class QueryClassifier:
         # val_texts-->原始的文本；val_labels--是标签数字
         self.evaluate_model(val_texts, val_labels)
 
-
     def preprocess_data(self, texts, labels):
         """预处理数据为 BERT 输入格式"""
-        encodings = self.tokenizer(
-            texts,
-            truncation=True,
-            padding='max_length',
-            max_length=128,
-            return_tensors="pt"
-        )
+        encodings = self.tokenizer(texts, truncation=True, padding="max_length", max_length=128, return_tensors="pt")
         labels = [self.label_map[label] for label in labels]
         # print(f'encodings--》{encodings}')
         # print(f'encodings--》{encodings["input_ids"].shape}')
@@ -167,30 +164,20 @@ class QueryClassifier:
     def evaluate_model(self, texts, labels):
         """评估模型性能"""
         # 仅对 texts 进行分词，labels 已为数字
-        encodings = self.tokenizer(
-            texts,
-            truncation=True,
-            padding="max_length",
-            max_length=128,
-            return_tensors="pt"
-        )
+        encodings = self.tokenizer(texts, truncation=True, padding="max_length", max_length=128, return_tensors="pt")
         dataset = self.create_dataset(encodings, labels)
-        print(f'len(dataset)-->{len(dataset)}')
-        print(f'dataset[0]--->{dataset[0]}')
+        print(f"len(dataset)-->{len(dataset)}")
+        print(f"dataset[0]--->{dataset[0]}")
         trainer = Trainer(model=self.model)
         predictions = trainer.predict(dataset)
-        print(f'predictions--》{predictions}')
+        print(f"predictions--》{predictions}")
         pred_labels = np.argmax(predictions.predictions, axis=-1)
         # print(f'pred_labels--》{type(pred_labels)}')
         # print(f'predictions.label_ids--》{predictions.label_ids}')
         true_labels = labels
 
         logger.info("分类报告:")
-        logger.info(classification_report(
-            true_labels,
-            pred_labels,
-            target_names=["通用知识", "专业咨询"]
-        ))
+        logger.info(classification_report(true_labels, pred_labels, target_names=["通用知识", "专业咨询"]))
         logger.info("混淆矩阵:")
         logger.info(confusion_matrix(true_labels, pred_labels))
 
@@ -213,8 +200,10 @@ class QueryClassifier:
         """预测查询类别（兼容旧接口）"""
         category, _ = self.predict_with_confidence(query)
         return category
-if __name__ == '__main__':
-    model_path = os.path.join(current_dir, 'bert_query_classifier')
+
+
+if __name__ == "__main__":
+    model_path = os.path.join(current_dir, "bert_query_classifier")
     query_classify = QueryClassifier(model_path=model_path)
     # data_file = '../classify_data/model_generic_5000.json'
     # query_classify.train_model(data_file)

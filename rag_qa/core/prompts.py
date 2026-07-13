@@ -187,7 +187,6 @@ AI课程的就业前景如何？
             input_variables=["query"],
         )
 
-
     @staticmethod
     def llm_reranker_prompt():
         return PromptTemplate(
@@ -220,7 +219,7 @@ AI课程的就业前景如何？
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     hyde = RAGPrompts.subquery_prompt()
     result = hyde.format(query="AI和JAVA有什么区别")
     print(result)

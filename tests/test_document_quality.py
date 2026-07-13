@@ -1,14 +1,15 @@
 # -*-coding:utf-8-*-
 """estimate_document_quality 独立冒烟测试（不触发 llamaindex_processor 的重型 ML 导入）"""
+
 import re
 
 # ---- 从 llamaindex_processor.py 复制的质量评估逻辑 ----
 
-_CJK_START = 0x4E00        # CJK统一表意文字起始
-_CJK_END = 0x9FFF          # CJK统一表意文字结尾
+_CJK_START = 0x4E00  # CJK统一表意文字起始
+_CJK_END = 0x9FFF  # CJK统一表意文字结尾
 _CJK_EXT_A_START = 0x3400  # CJK扩展A起始
-_CJK_EXT_A_END = 0x4DBF    # CJK扩展A结尾
-_STANDARD_PUNCT = set(',.;:!?"\'()[]{}<>-+/\\| \t\n\r@#$%^&*~`=')
+_CJK_EXT_A_END = 0x4DBF  # CJK扩展A结尾
+_STANDARD_PUNCT = set(",.;:!?\"'()[]{}<>-+/\\| \t\n\r@#$%^&*~`=")
 
 LOW_QUALITY_THRESHOLD = 0.3
 
@@ -46,17 +47,14 @@ def estimate_document_quality(doc) -> float:
     content_ratio = content_chars / total
 
     # 3. OCR 噪音分数
-    repeat_count = len(re.findall(r'(.)\1{5,}', text))
+    repeat_count = len(re.findall(r"(.)\1{5,}", text))
     repeat_penalty = min(repeat_count * 0.1, 0.30)
 
-    non_standard = sum(
-        1 for c in text
-        if not _is_content_char(c) and c not in _STANDARD_PUNCT and not c.isspace()
-    )
+    non_standard = sum(1 for c in text if not _is_content_char(c) and c not in _STANDARD_PUNCT and not c.isspace())
     ns_ratio = non_standard / total
     ns_penalty = min(ns_ratio * 2.0, 0.40)
 
-    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
     if lines:
         avg_line_len = sum(len(l) for l in lines) / len(lines)
         if avg_line_len < 15:
@@ -71,9 +69,7 @@ def estimate_document_quality(doc) -> float:
     noise_penalty = min(repeat_penalty + ns_penalty + line_penalty, 0.80)
     noise_score = 1.0 - noise_penalty
 
-    quality = (0.30 * length_score +
-               0.40 * content_ratio +
-               0.30 * noise_score)
+    quality = 0.30 * length_score + 0.40 * content_ratio + 0.30 * noise_score
     quality = max(0.0, min(1.0, quality))
     if content_ratio < 0.1:
         quality = min(quality, 0.15)
@@ -86,6 +82,7 @@ def estimate_document_quality(doc) -> float:
 
 # ---- 简易 Document 模拟 ----
 
+
 class FakeDoc:
     def __init__(self, page_content, metadata=None):
         self.page_content = page_content
@@ -93,6 +90,7 @@ class FakeDoc:
 
 
 # ---- 测试用例 ----
+
 
 def test_empty_text():
     doc = FakeDoc("")

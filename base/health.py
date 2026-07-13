@@ -7,6 +7,7 @@ Provides:
 Types (HealthStatus, DegradationLevel, ComponentHealth, CircuitBreaker) are in health_types.py.
 HealthChecker (per-dependency probes) is in health_checker.py.
 """
+
 import asyncio
 import threading
 import time
@@ -27,6 +28,7 @@ from base.metrics import qa_component_health, qa_degradation_level
 # ============================================================
 # System Health — Central orchestrator
 # ============================================================
+
 
 class SystemHealth:
     """Orchestrates health checks, degradation level, circuit breakers, and auto-recovery."""
@@ -116,9 +118,7 @@ class SystemHealth:
     def _export_metrics(self):
         """Update Prometheus gauges from current health state."""
         for name, component in self._health_cache.items():
-            qa_component_health.labels(component=name).set(
-                1 if component.status == HealthStatus.HEALTHY else 0
-            )
+            qa_component_health.labels(component=name).set(1 if component.status == HealthStatus.HEALTHY else 0)
         qa_degradation_level.set(int(self._compute_degradation_level()))
 
     def _compute_degradation_level(self) -> DegradationLevel:
@@ -181,9 +181,7 @@ class SystemHealth:
         """Start the background recovery loop as an asyncio task."""
         loop = asyncio.get_running_loop()
         self._background_task = loop.create_task(self._recovery_loop())
-        self.logger.info(
-            f"后台恢复任务已启动 (间隔 {self._recovery_interval}s)"
-        )
+        self.logger.info(f"后台恢复任务已启动 (间隔 {self._recovery_interval}s)")
 
     async def _recovery_loop(self):
         while True:

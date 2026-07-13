@@ -2,6 +2,7 @@
 文档处理器 - 使用 LlamaIndex 实现
 保持与原有 API 兼容
 """
+
 import os
 
 # 导入必要的类型检查
@@ -26,7 +27,7 @@ document_loaders = {
     ".pptx": None,
     ".jpg": None,
     ".png": None,
-    ".md": None
+    ".md": None,
 }
 
 
@@ -43,8 +44,7 @@ def load_documents_from_directory(directory_path):
     return llamaindex_load(directory_path)
 
 
-def process_documents(directory_path, parent_chunk_size=None,
-                      child_chunk_size=None, chunk_overlap=None):
+def process_documents(directory_path, parent_chunk_size=None, child_chunk_size=None, chunk_overlap=None):
     """
     处理文档并进行分层切分（保持原有函数签名）
 
@@ -90,7 +90,7 @@ def validate_document_format(documents: list) -> bool:
         print("[验证] ✓ 文档类型正确")
 
     # 检查必要的属性
-    required_attrs = ['page_content', 'metadata']
+    required_attrs = ["page_content", "metadata"]
     for attr in required_attrs:
         if not hasattr(first_doc, attr):
             print(f"[验证] ❌ 缺少必要属性: {attr}")
@@ -98,10 +98,10 @@ def validate_document_format(documents: list) -> bool:
     print("[验证] ✓ 文档属性完整")
 
     # 检查元数据字段
-    required_metadata = ['id', 'parent_id', 'parent_content', 'source', 'file_path', 'timestamp']
+    required_metadata = ["id", "parent_id", "parent_content", "source", "file_path", "timestamp"]
     missing_fields = []
 
-    if hasattr(first_doc, 'metadata') and isinstance(first_doc.metadata, dict):
+    if hasattr(first_doc, "metadata") and isinstance(first_doc.metadata, dict):
         for field in required_metadata:
             if field not in first_doc.metadata:
                 missing_fields.append(field)
@@ -121,7 +121,7 @@ def validate_document_format(documents: list) -> bool:
         print("[验证] ⚠️ 文档内容为空")
 
     # 检查 ID 唯一性
-    doc_ids = [doc.metadata.get('id') for doc in documents if hasattr(doc, 'metadata')]
+    doc_ids = [doc.metadata.get("id") for doc in documents if hasattr(doc, "metadata")]
     unique_ids = set(doc_ids)
     if len(doc_ids) == len(unique_ids):
         print("[验证] ✓ 文档ID唯一")
@@ -132,15 +132,14 @@ def validate_document_format(documents: list) -> bool:
     return True
 
 
-
 # 保持原有入口（如果有脚本直接运行）
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("🚀 文档处理器验证测试")
-    print("="*50)
+    print("=" * 50)
 
     # 1. 加载和处理文档
     print("\n📄 开始处理文档...")
-    directory_path = 'D:\\PythonProjects\\integrated_qa_system\\rag_qa\\data\\ai_data'
+    directory_path = "D:\\PythonProjects\\integrated_qa_system\\rag_qa\\data\\ai_data"
 
     # 确保路径存在
     if not os.path.exists(directory_path):
@@ -178,5 +177,6 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"\n❌ 测试失败: {e}")
         import traceback
+
         traceback.print_exc()
         exit(1)

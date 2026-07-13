@@ -1,4 +1,5 @@
 """REST API routes: root/health, sessions, query, sources."""
+
 import time
 import uuid
 
@@ -18,14 +19,17 @@ router = APIRouter()
 
 def _get_qa_system():
     import app as app_module
+
     return app_module.qa_system
 
 
 # ========== Root & Health ==========
 
+
 @router.get("/")
 async def read_root():
     from fastapi.responses import FileResponse
+
     return FileResponse("static/index.html")
 
 
@@ -52,6 +56,7 @@ async def status_detail():
 
 # ========== Session Endpoints ==========
 
+
 @router.post("/api/create_session")
 async def create_session(user: dict = Depends(get_current_user)):
     session_id = str(uuid.uuid4())
@@ -68,8 +73,7 @@ async def get_user_sessions(user: dict = Depends(require_auth)):
 @router.get("/api/history/{session_id}")
 async def get_history(session_id: str, user: dict = Depends(require_auth)):
     repo = ConversationRepository(SessionLocal)
-    history = repo.get_session_history(session_id, user["user_id"],
-                                       tenant_id=user["tenant_id"])
+    history = repo.get_session_history(session_id, user["user_id"], tenant_id=user["tenant_id"])
     return {"session_id": session_id, "history": history}
 
 
@@ -79,12 +83,14 @@ async def delete_history(request: DeleteHistoryRequest, user: dict = Depends(req
         raise HTTPException(status_code=400, detail="请选择要删除的会话")
     audit = get_audit_logger()
     repo = ConversationRepository(SessionLocal)
-    count = repo.soft_delete_sessions(request.session_ids, user["user_id"],
-                                      tenant_id=user["tenant_id"])
+    count = repo.soft_delete_sessions(request.session_ids, user["user_id"], tenant_id=user["tenant_id"])
     if count > 0:
-        audit.log(AuditEventType.HISTORY_DELETED, user_id=user["user_id"],
-                  tenant_id=user["tenant_id"],
-                  detail={"session_ids": request.session_ids, "count": count})
+        audit.log(
+            AuditEventType.HISTORY_DELETED,
+            user_id=user["user_id"],
+            tenant_id=user["tenant_id"],
+            detail={"session_ids": request.session_ids, "count": count},
+        )
         return {"status": "success", "message": f"已删除 {count} 个会话的对话记录"}
     else:
         raise HTTPException(status_code=404, detail="未找到可删除的对话记录")
@@ -97,6 +103,7 @@ async def get_sources():
 
 
 # ========== Query Endpoint ==========
+
 
 @router.post("/api/query")
 async def query(request: QueryRequest, user: dict = Depends(get_current_user)):

@@ -7,6 +7,7 @@ the retrieved context using a dedicated Chinese NLI model.
 Design: SoftGate only — flags/logs/metrics, does NOT block responses.
 Runs AFTER streaming completes so Time-to-First-Token is unaffected.
 """
+
 import os
 import re
 import time
@@ -28,6 +29,7 @@ conf = Config()
 # Data classes
 # ============================================================
 
+
 @dataclass
 class ClaimResult:
     claim: str
@@ -48,6 +50,7 @@ class HallucinationResult:
 # ============================================================
 # HallucinationGuard
 # ============================================================
+
 
 class HallucinationGuard:
     """Real-time NLI-based hallucination detector.
@@ -119,10 +122,7 @@ class HallucinationGuard:
         hallucinated_claims = [r for r in results if r.is_contradicted]
         all_entailed = len(hallucinated_claims) == 0
 
-        overall_score = (
-            sum(r.entailment_score for r in results) / len(results)
-            if results else 1.0
-        )
+        overall_score = sum(r.entailment_score for r in results) / len(results) if results else 1.0
 
         latency = time.time() - start_time
         qa_hallucination_guard_latency_seconds.observe(latency)
@@ -131,18 +131,13 @@ class HallucinationGuard:
             qa_hallucination_guard_total.labels(result="passed").inc()
         else:
             qa_hallucination_guard_total.labels(result="flagged").inc()
-            self.logger.warning(
-                f"HallucinationGuard: {len(hallucinated_claims)}/{len(claims)} "
-                f"个陈述可能缺乏文档依据"
-            )
+            self.logger.warning(f"HallucinationGuard: {len(hallucinated_claims)}/{len(claims)} 个陈述可能缺乏文档依据")
 
         return HallucinationResult(
             is_hallucinated=not all_entailed,
             score=overall_score,
             claims=results,
-            details=(
-                f"{len(hallucinated_claims)}/{len(claims)} claims potentially unsupported"
-            ),
+            details=(f"{len(hallucinated_claims)}/{len(claims)} claims potentially unsupported"),
         )
 
     # ============================================================
@@ -205,10 +200,7 @@ class HallucinationGuard:
         neutral_score = float(probs[1].item())
         contradiction_score = float(probs[2].item())
 
-        is_contradicted = (
-            contradiction_score > self.contradiction_threshold
-            and contradiction_score > entailment_score
-        )
+        is_contradicted = contradiction_score > self.contradiction_threshold and contradiction_score > entailment_score
 
         return ClaimResult(
             claim=claim,

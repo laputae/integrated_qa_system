@@ -34,6 +34,7 @@ class GatewayMiddleware(BaseHTTPMiddleware):
     @staticmethod
     def _get_config():
         from base.config import Config
+
         return Config()
 
     @property
@@ -65,19 +66,20 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                     # Skip SQL injection scan on query endpoints (they use
                     # parameterized queries — false positives on edu content)
                     if path in _SKIP_SQL_SCAN_PATHS:
-                        xss_result = SecurityFilter.detect_xss(
-                            body_bytes.decode("utf-8")
-                        )
+                        xss_result = SecurityFilter.detect_xss(body_bytes.decode("utf-8"))
                         scan_ok, scan_error = (False, xss_result) if xss_result else (True, None)
                     else:
-                        scan_ok, scan_error = SecurityFilter.scan(
-                            body_bytes.decode("utf-8")
-                        )
+                        scan_ok, scan_error = SecurityFilter.scan(body_bytes.decode("utf-8"))
                     if not scan_ok:
                         detail = {"path": path, "reason": scan_error, "ip": client_ip}
-                        audit.log(AuditEventType.SQL_INJECTION_ATTEMPT if "SQL" in str(scan_error)
-                                  else AuditEventType.XSS_ATTEMPT,
-                                  ip_address=client_ip, user_agent=user_agent, detail=detail)
+                        audit.log(
+                            AuditEventType.SQL_INJECTION_ATTEMPT
+                            if "SQL" in str(scan_error)
+                            else AuditEventType.XSS_ATTEMPT,
+                            ip_address=client_ip,
+                            user_agent=user_agent,
+                            detail=detail,
+                        )
                         return JSONResponse(
                             status_code=400,
                             content={"detail": f"请求被安全过滤器拦截: {scan_error}"},
@@ -106,15 +108,18 @@ class GatewayMiddleware(BaseHTTPMiddleware):
             if not (self._metrics_auth_user and self._metrics_auth_password):
                 return JSONResponse(
                     status_code=403,
-                    content={"detail": "Metrics endpoint not configured: set METRICS_AUTH_USER and METRICS_AUTH_PASSWORD"},
+                    content={
+                        "detail": "Metrics endpoint not configured: set METRICS_AUTH_USER and METRICS_AUTH_PASSWORD"
+                    },
                 )
             import base64
+
             auth_header = request.headers.get("Authorization", "")
             if not auth_header.startswith("Basic "):
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "未提供认证信息"},
-                    headers={"WWW-Authenticate": "Basic realm=\"metrics\""},
+                    headers={"WWW-Authenticate": 'Basic realm="metrics"'},
                 )
             try:
                 credentials = base64.b64decode(auth_header[6:]).decode("utf-8")
@@ -125,7 +130,7 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "认证信息无效"},
-                    headers={"WWW-Authenticate": "Basic realm=\"metrics\""},
+                    headers={"WWW-Authenticate": 'Basic realm="metrics"'},
                 )
 
         # ---- Layer 2: RateLimiter (all requests) ----
@@ -137,9 +142,12 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                 rate_allowed = self.rate_limiter.check_register_limit(client_ip)
             # For business endpoints, rate limit is checked after JWT verification
             if not rate_allowed:
-                audit.log(AuditEventType.RATE_LIMIT_EXCEEDED,
-                          ip_address=client_ip, user_agent=user_agent,
-                          detail={"path": path})
+                audit.log(
+                    AuditEventType.RATE_LIMIT_EXCEEDED,
+                    ip_address=client_ip,
+                    user_agent=user_agent,
+                    detail={"path": path},
+                )
                 return JSONResponse(
                     status_code=429,
                     content={"detail": "请求过于频繁，请稍后再试"},
@@ -148,11 +156,15 @@ class GatewayMiddleware(BaseHTTPMiddleware):
         # ---- Layer 3: AuthMiddleware — JWT check for non-whitelisted paths ----
         if path.startswith("/api/") and not is_whitelisted(path):
             from gateway.auth import decode_access_token, get_token_jti
+
             auth_header = request.headers.get("Authorization", "")
             if not auth_header.startswith("Bearer "):
-                audit.log(AuditEventType.UNAUTHORIZED_ACCESS,
-                          ip_address=client_ip, user_agent=user_agent,
-                          detail={"path": path, "reason": "missing_token"})
+                audit.log(
+                    AuditEventType.UNAUTHORIZED_ACCESS,
+                    ip_address=client_ip,
+                    user_agent=user_agent,
+                    detail={"path": path, "reason": "missing_token"},
+                )
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "未提供认证令牌"},
@@ -178,26 +190,34 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                 }
                 request.scope["current_user"] = user_ctx
                 _scope["current_user"] = user_ctx
-                RequestContext.set(
-                    user_id=payload["user_id"], tenant_id=tenant_id
-                )
+                RequestContext.set(user_id=payload["user_id"], tenant_id=tenant_id)
                 # Rate limit for business endpoints
                 user_id = payload["user_id"]
                 if path == "/api/query" or path == "/api/stream":
-                    check_func = self.rate_limiter.check_query_limit if path == "/api/query" \
+                    check_func = (
+                        self.rate_limiter.check_query_limit
+                        if path == "/api/query"
                         else self.rate_limiter.check_stream_limit
+                    )
                     if not check_func(user_id, tenant_id):
-                        audit.log(AuditEventType.RATE_LIMIT_EXCEEDED,
-                                  user_id=user_id, ip_address=client_ip,
-                                  user_agent=user_agent, detail={"path": path})
+                        audit.log(
+                            AuditEventType.RATE_LIMIT_EXCEEDED,
+                            user_id=user_id,
+                            ip_address=client_ip,
+                            user_agent=user_agent,
+                            detail={"path": path},
+                        )
                         return JSONResponse(
                             status_code=429,
                             content={"detail": "请求过于频繁，请稍后再试"},
                         )
             except Exception:
-                audit.log(AuditEventType.UNAUTHORIZED_ACCESS,
-                          ip_address=client_ip, user_agent=user_agent,
-                          detail={"path": path, "reason": "invalid_token"})
+                audit.log(
+                    AuditEventType.UNAUTHORIZED_ACCESS,
+                    ip_address=client_ip,
+                    user_agent=user_agent,
+                    detail={"path": path, "reason": "invalid_token"},
+                )
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "令牌无效或已过期"},
@@ -214,7 +234,4 @@ class GatewayMiddleware(BaseHTTPMiddleware):
             raise
         finally:
             duration_ms = (time.time() - start_time) * 1000
-            logger.info(
-                f"{request.method} {path} -> {status_code} "
-                f"[{duration_ms:.1f}ms]"
-            )
+            logger.info(f"{request.method} {path} -> {status_code} [{duration_ms:.1f}ms]")

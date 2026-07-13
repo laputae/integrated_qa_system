@@ -3,6 +3,7 @@ Query embedding cache — Redis-backed cache for dense/sparse query embeddings.
 
 Extracted from vector_store.py to keep each module under 300 lines.
 """
+
 import hashlib
 
 import numpy as np
@@ -10,8 +11,7 @@ import numpy as np
 from base import logger
 
 
-def get_query_embedding_cached(query, embedding_function, redis_client, config,
-                               log=None):
+def get_query_embedding_cached(query, embedding_function, redis_client, config, log=None):
     """Get query embeddings, preferring Redis cache over recomputation.
 
     Cache key: emb:{md5(query)}
@@ -50,7 +50,7 @@ def get_query_embedding_cached(query, embedding_function, redis_client, config,
 
     # Ensure dense vectors are float32
     dense_vec = query_embeddings["dense"][0]
-    if hasattr(dense_vec, 'dtype') and dense_vec.dtype != np.float32:
+    if hasattr(dense_vec, "dtype") and dense_vec.dtype != np.float32:
         query_embeddings["dense"][0] = dense_vec.astype(np.float32)
 
     # Write cache
@@ -70,8 +70,8 @@ def get_query_embedding_cached(query, embedding_function, redis_client, config,
 
 def _sparse_to_dict(sparse_row) -> dict:
     """Convert sparse vector to dict, handling csr_matrix, dict, and empty formats."""
-    if hasattr(sparse_row, 'indices'):
-        indices = sparse_row.indices if hasattr(sparse_row, 'indices') else sparse_row.col
+    if hasattr(sparse_row, "indices"):
+        indices = sparse_row.indices if hasattr(sparse_row, "indices") else sparse_row.col
         return dict(zip(indices, sparse_row.data))
     elif isinstance(sparse_row, dict):
         if sparse_row and not isinstance(next(iter(sparse_row.keys())), int):

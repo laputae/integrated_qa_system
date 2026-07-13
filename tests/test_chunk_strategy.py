@@ -1,4 +1,5 @@
 """自适应 Chunk 配置 — 切分策略 & 集成测试"""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,10 +8,12 @@ import pytest
 # AliTextSplitter 测试
 # ============================================================================
 
+
 class TestAliTextSplitter:
     def test_default_model_path(self):
         """AliTextSplitter 默认 model_path 指向 rag_qa/nlp_bert_..."""
         from rag_qa.edu_text_spliter.edu_model_text_spliter import AliTextSplitter
+
         path = AliTextSplitter._default_model_path()
         assert "nlp_bert_document-segmentation_chinese-base" in path
         assert path.endswith("base")
@@ -18,12 +21,14 @@ class TestAliTextSplitter:
     def test_custom_model_path(self):
         """AliTextSplitter 接受自定义 model_path"""
         from rag_qa.edu_text_spliter.edu_model_text_spliter import AliTextSplitter
+
         splitter = AliTextSplitter(model_path="/custom/path")
         assert splitter._model_path == "/custom/path"
 
     def test_pipeline_lazy_loading(self):
         """AliTextSplitter pipeline 是懒加载的"""
         from rag_qa.edu_text_spliter.edu_model_text_spliter import AliTextSplitter
+
         splitter = AliTextSplitter(model_path="/custom/path")
         assert splitter._pipeline is None
 
@@ -31,6 +36,7 @@ class TestAliTextSplitter:
     def test_pipeline_created_once(self, mock_pipeline):
         """pipeline 只创建一次（单例行为）"""
         from rag_qa.edu_text_spliter.edu_model_text_spliter import AliTextSplitter
+
         mock_result = MagicMock()
         mock_result.__getitem__ = lambda self, key: "\n\t".join(["段落1", "段落2", "段落3"])
         mock_pipeline.return_value = MagicMock(return_value=mock_result)
@@ -67,6 +73,7 @@ class TestAliTextSplitter:
 
         class FakeResult(dict):
             pass
+
         fake_result = FakeResult()
         fake_result["text"] = "段落1\n\t段落2"
         mock_pipeline.return_value = MagicMock(return_value=fake_result)
@@ -80,6 +87,7 @@ class TestAliTextSplitter:
     def test_split_text_raises_on_errors(self, mock_pipeline):
         """pipeline 失败时抛出 RuntimeError"""
         from rag_qa.edu_text_spliter.edu_model_text_spliter import AliTextSplitter
+
         mock_pipeline.side_effect = RuntimeError("Model download failed")
 
         splitter = AliTextSplitter(model_path="/invalid/path")
@@ -91,6 +99,7 @@ class TestAliTextSplitter:
 # ChunkStrategy 工厂测试
 # ============================================================================
 
+
 class TestChunkStrategy:
     def test_create_parent_recursive(self):
         from rag_qa.edu_text_spliter.chunk_strategy import (
@@ -100,6 +109,7 @@ class TestChunkStrategy:
         from rag_qa.edu_text_spliter.edu_chinese_recursive_text_splitter import (
             ChineseRecursiveTextSplitter,
         )
+
         splitter = create_parent_splitter(RECURSIVE, 1200, 50)
         assert isinstance(splitter, ChineseRecursiveTextSplitter)
         assert splitter._chunk_size == 1200
@@ -111,6 +121,7 @@ class TestChunkStrategy:
             MARKDOWN,
             create_parent_splitter,
         )
+
         splitter = create_parent_splitter(MARKDOWN, 800, 30)
         assert isinstance(splitter, MarkdownTextSplitter)
 
@@ -120,6 +131,7 @@ class TestChunkStrategy:
             create_parent_splitter,
         )
         from rag_qa.edu_text_spliter.edu_model_text_spliter import AliTextSplitter
+
         splitter = create_parent_splitter(SEMANTIC, 1200, 50)
         assert isinstance(splitter, AliTextSplitter)
 
@@ -132,6 +144,7 @@ class TestChunkStrategy:
         from rag_qa.edu_text_spliter.edu_chinese_recursive_text_splitter import (
             ChineseRecursiveTextSplitter,
         )
+
         splitter = create_child_splitter(SEMANTIC, 300, 50)
         assert isinstance(splitter, ChineseRecursiveTextSplitter)
 
@@ -142,6 +155,7 @@ class TestChunkStrategy:
             MARKDOWN,
             create_child_splitter,
         )
+
         splitter = create_child_splitter(MARKDOWN, 300, 50)
         assert isinstance(splitter, MarkdownTextSplitter)
 
@@ -150,10 +164,12 @@ class TestChunkStrategy:
 # _split_documents 策略选择集成测试
 # ============================================================================
 
+
 class TestSplitDocumentsStrategy:
     def test_markdown_always_uses_markdown_strategy(self):
         """Markdown 文件的 markdown 策略由 _split_documents 强制使用"""
         from base.chunk_config import ChunkConfigManager
+
         mgr = ChunkConfigManager()
         mgr.update_config({"default_strategy": "semantic"})
         strategy = mgr.get_strategy("md")
@@ -164,7 +180,10 @@ class TestSplitDocumentsStrategy:
     @patch("rag_qa.core.llamaindex_processor.create_child_splitter")
     @patch("rag_qa.core.llamaindex_processor.ChunkConfigManager")
     def test_semantic_fallback_on_error(
-        self, mock_cfg_mgr, mock_create_child, mock_create_parent,
+        self,
+        mock_cfg_mgr,
+        mock_create_child,
+        mock_create_parent,
     ):
         """语义策略失败时回退到 fallback 策略"""
         from langchain_core.documents import Document as LangchainDocument
@@ -196,7 +215,10 @@ class TestSplitDocumentsStrategy:
     @patch("rag_qa.core.llamaindex_processor.create_child_splitter")
     @patch("rag_qa.core.llamaindex_processor.ChunkConfigManager")
     def test_recursive_strategy_used_by_default(
-        self, mock_cfg_mgr, mock_create_child, mock_create_parent,
+        self,
+        mock_cfg_mgr,
+        mock_create_child,
+        mock_create_parent,
     ):
         """默认策略为 recursive"""
         from langchain_core.documents import Document as LangchainDocument

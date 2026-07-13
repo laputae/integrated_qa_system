@@ -3,6 +3,7 @@ LLM listwise reranker for RAG document ranking.
 
 Extracted from rag_system.py to keep each module under 300 lines.
 """
+
 import json
 import re
 import time
@@ -40,21 +41,19 @@ def rerank_with_llm(llm_callable, query: str, docs: list, config) -> list:
 
     # Import prompt template locally to avoid circular import at module level
     from prompts import RAGPrompts
+
     prompt = RAGPrompts.llm_reranker_prompt().format(
         query=query,
         documents=documents_str,
     )
 
     try:
-        response = ''.join(llm_callable(prompt)).strip()
+        response = "".join(llm_callable(prompt)).strip()
 
         # Extract last JSON array
-        json_match = re.search(r'\[[\d,\s]+\]', response)
+        json_match = re.search(r"\[[\d,\s]+\]", response)
         if not json_match:
-            log.warning(
-                f"LLM reranker: 响应中无 JSON 数组，回退。"
-                f"Response: {response[:200]}"
-            )
+            log.warning(f"LLM reranker: 响应中无 JSON 数组，回退。Response: {response[:200]}")
             qa_llm_rerank_total.labels(status="parse_failure").inc()
             return docs
 
@@ -62,10 +61,7 @@ def rerank_with_llm(llm_callable, query: str, docs: list, config) -> list:
 
         # Validate index count
         if not isinstance(indices, list) or len(indices) != len(docs):
-            log.warning(
-                f"LLM reranker: 索引数量不匹配 "
-                f"(got {len(indices)}, expected {len(docs)})，回退"
-            )
+            log.warning(f"LLM reranker: 索引数量不匹配 (got {len(indices)}, expected {len(docs)})，回退")
             qa_llm_rerank_total.labels(status="invalid_indices").inc()
             return docs
 
@@ -74,9 +70,7 @@ def rerank_with_llm(llm_callable, query: str, docs: list, config) -> list:
         for idx in indices:
             zero_idx = int(idx) - 1
             if zero_idx < 0 or zero_idx >= len(docs):
-                log.warning(
-                    f"LLM reranker: 索引 {idx} 越界 [1, {len(docs)}]，回退"
-                )
+                log.warning(f"LLM reranker: 索引 {idx} 越界 [1, {len(docs)}]，回退")
                 qa_llm_rerank_total.labels(status="out_of_range").inc()
                 return docs
             if zero_idx in seen:
@@ -94,10 +88,7 @@ def rerank_with_llm(llm_callable, query: str, docs: list, config) -> list:
         qa_llm_rerank_total.labels(status="success").inc()
         latency = time.time() - start_time
         qa_llm_rerank_latency_seconds.observe(latency)
-        log.info(
-            f"LLM reranker 完成: {len(docs)} 文档重排序, "
-            f"新顺序: {indices}, 耗时 {latency:.2f}s"
-        )
+        log.info(f"LLM reranker 完成: {len(docs)} 文档重排序, 新顺序: {indices}, 耗时 {latency:.2f}s")
         return reordered
 
     except json.JSONDecodeError as e:
@@ -133,11 +124,34 @@ def is_critical_query(query: str, strategy: str, config) -> bool:
 def check_force_rag_keywords(query: str) -> bool:
     """领域关键词预检 — 命中则强制走 RAG，不受分类器结果影响"""
     force_rag_patterns = [
-        "课程", "大纲", "教案", "讲义", "课件", "实训", "实验",
-        "项目", "案例", "作业", "考试", "考核", "认证",
-        "培训", "教学", "师资", "老师", "教师", "讲师",
-        "架构", "框架", "算法", "模型", "原理",
-        "实现", "部署", "优化", "调优",
+        "课程",
+        "大纲",
+        "教案",
+        "讲义",
+        "课件",
+        "实训",
+        "实验",
+        "项目",
+        "案例",
+        "作业",
+        "考试",
+        "考核",
+        "认证",
+        "培训",
+        "教学",
+        "师资",
+        "老师",
+        "教师",
+        "讲师",
+        "架构",
+        "框架",
+        "算法",
+        "模型",
+        "原理",
+        "实现",
+        "部署",
+        "优化",
+        "调优",
     ]
     for pattern in force_rag_patterns:
         if pattern in query:

@@ -1,4 +1,5 @@
 """Auth endpoints: register, login, refresh, logout + greeting patterns."""
+
 import re
 
 from fastapi import APIRouter, Depends
@@ -26,14 +27,16 @@ router = APIRouter()
 # ========== Greeting Patterns ==========
 
 GREETING_PATTERNS = [
-    {"pattern": r"^(你好|您好|hi|hello)",
-     "response": "你好！我是黑马程序员，专注于为学生答疑解惑，很高兴为你服务！"},
-    {"pattern": r"^(你是谁|您是谁|你叫什么|你的名字|who are you)",
-     "response": "我是黑马程序员，你的智能学习助手，致力于提供 IT 教育相关的解答！"},
-    {"pattern": r"^(在吗|在不在|有人吗)",
-     "response": "我在！我是黑马程序员，随时为你解答问题！"},
-    {"pattern": r"^(干嘛呢|你在干嘛|做什么)",
-     "response": "我正在待命，随时为你解答 IT 学习相关的问题！有什么我可以帮你的？"},
+    {"pattern": r"^(你好|您好|hi|hello)", "response": "你好！我是黑马程序员，专注于为学生答疑解惑，很高兴为你服务！"},
+    {
+        "pattern": r"^(你是谁|您是谁|你叫什么|你的名字|who are you)",
+        "response": "我是黑马程序员，你的智能学习助手，致力于提供 IT 教育相关的解答！",
+    },
+    {"pattern": r"^(在吗|在不在|有人吗)", "response": "我在！我是黑马程序员，随时为你解答问题！"},
+    {
+        "pattern": r"^(干嘛呢|你在干嘛|做什么)",
+        "response": "我正在待命，随时为你解答 IT 学习相关的问题！有什么我可以帮你的？",
+    },
 ]
 
 
@@ -46,6 +49,7 @@ def check_greeting(query: str) -> str | None:
 
 
 # ========== Auth Endpoints ==========
+
 
 @router.post("/api/auth/register")
 async def register(request: RegisterRequest):
@@ -73,11 +77,9 @@ async def register(request: RegisterRequest):
     refresh_token, jti, expires_at = create_refresh_token(user.id, user.username, tenant.id)
 
     from db_models.refresh_token import RefreshToken
+
     with SessionLocal() as session:
-        rt = RefreshToken(
-            user_id=user.id, tenant_id=tenant.id,
-            token_jti=jti, expires_at=expires_at, device_info=None
-        )
+        rt = RefreshToken(user_id=user.id, tenant_id=tenant.id, token_jti=jti, expires_at=expires_at, device_info=None)
         session.add(rt)
         session.commit()
 
@@ -99,26 +101,22 @@ async def login(request: LoginRequest):
     tenant_repo = TenantRepository(SessionLocal)
     tenant = tenant_repo.get_by_name(request.tenant_name)
     if not tenant or not tenant.is_active:
-        audit.log(AuditEventType.LOGIN_FAILED,
-                  detail={"username": request.username, "tenant": request.tenant_name})
+        audit.log(AuditEventType.LOGIN_FAILED, detail={"username": request.username, "tenant": request.tenant_name})
         return JSONResponse(status_code=401, content={"detail": "用户名或密码错误"})
 
     repo = UserRepository(SessionLocal)
     user = repo.get_by_username(request.username, tenant.id)
     if not user or not verify_password(request.password, user.password_hash):
-        audit.log(AuditEventType.LOGIN_FAILED,
-                  detail={"username": request.username, "tenant": request.tenant_name})
+        audit.log(AuditEventType.LOGIN_FAILED, detail={"username": request.username, "tenant": request.tenant_name})
         return JSONResponse(status_code=401, content={"detail": "用户名或密码错误"})
 
     access_token = create_access_token(user.id, user.username, tenant.id)
     refresh_token, jti, expires_at = create_refresh_token(user.id, user.username, tenant.id)
 
     from db_models.refresh_token import RefreshToken
+
     with SessionLocal() as session:
-        rt = RefreshToken(
-            user_id=user.id, tenant_id=tenant.id,
-            token_jti=jti, expires_at=expires_at, device_info=None
-        )
+        rt = RefreshToken(user_id=user.id, tenant_id=tenant.id, token_jti=jti, expires_at=expires_at, device_info=None)
         session.add(rt)
         session.commit()
 
@@ -149,6 +147,7 @@ async def refresh_token(request: RefreshRequest):
 
     redis_client.blacklist_token(jti, get_token_ttl(request.refresh_token))
     from db_models.refresh_token import RefreshToken
+
     with SessionLocal() as session:
         rt = session.query(RefreshToken).filter(RefreshToken.token_jti == jti).first()
         if rt:
@@ -164,8 +163,7 @@ async def refresh_token(request: RefreshRequest):
 
     with SessionLocal() as session:
         rt = RefreshToken(
-            user_id=user_id, tenant_id=tenant_id,
-            token_jti=new_jti, expires_at=new_expires_at, device_info=None
+            user_id=user_id, tenant_id=tenant_id, token_jti=new_jti, expires_at=new_expires_at, device_info=None
         )
         session.add(rt)
         session.commit()
@@ -188,6 +186,5 @@ async def logout(user: dict = Depends(require_auth)):
     if jti:
         redis_client.blacklist_token(jti, 3600)
 
-    audit.log(AuditEventType.LOGOUT, user_id=user["user_id"],
-              tenant_id=user.get("tenant_id", 0))
+    audit.log(AuditEventType.LOGOUT, user_id=user["user_id"], tenant_id=user.get("tenant_id", 0))
     return {"message": "已登出"}

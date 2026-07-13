@@ -1,4 +1,5 @@
 """评估自动化管道 — RAGAS integration tests"""
+
 import json
 
 
@@ -7,6 +8,7 @@ class TestEvalServiceEnsureRagas:
         import sys
 
         from rag_qa.eval.ragas_runner import ensure_ragas_importable
+
         ensure_ragas_importable()
         assert "langchain_community.chat_models.vertexai" in sys.modules
 
@@ -17,10 +19,22 @@ class TestEvalServicePrepareRagasDataset:
         from rag_qa.eval.ragas_runner import prepare_ragas_dataset
 
         results = [
-            EvalResult(id=1, run_id=1, question="Q1", ground_truth="A1",
-                       answer="Answer1", contexts=json.dumps(["ctx1", "ctx2"], ensure_ascii=False)),
-            EvalResult(id=2, run_id=1, question="Q2", ground_truth="A2",
-                       answer="Answer2", contexts=json.dumps(["ctx3"], ensure_ascii=False)),
+            EvalResult(
+                id=1,
+                run_id=1,
+                question="Q1",
+                ground_truth="A1",
+                answer="Answer1",
+                contexts=json.dumps(["ctx1", "ctx2"], ensure_ascii=False),
+            ),
+            EvalResult(
+                id=2,
+                run_id=1,
+                question="Q2",
+                ground_truth="A2",
+                answer="Answer2",
+                contexts=json.dumps(["ctx3"], ensure_ascii=False),
+            ),
         ]
 
         dataset = prepare_ragas_dataset(results)
@@ -33,8 +47,7 @@ class TestEvalServicePrepareRagasDataset:
         from rag_qa.eval.ragas_runner import prepare_ragas_dataset
 
         results = [
-            EvalResult(id=1, run_id=1, question="Q1", ground_truth="A1",
-                       answer="Answer1", contexts=None),
+            EvalResult(id=1, run_id=1, question="Q1", ground_truth="A1", answer="Answer1", contexts=None),
         ]
         dataset = prepare_ragas_dataset(results)
         assert dataset["contexts"][0] == []
@@ -44,8 +57,7 @@ class TestEvalServicePrepareRagasDataset:
         from rag_qa.eval.ragas_runner import prepare_ragas_dataset
 
         results = [
-            EvalResult(id=1, run_id=1, question="Q1", ground_truth="A1",
-                       answer=None, contexts=None),
+            EvalResult(id=1, run_id=1, question="Q1", ground_truth="A1", answer=None, contexts=None),
         ]
         dataset = prepare_ragas_dataset(results)
         assert dataset["answer"][0] == ""

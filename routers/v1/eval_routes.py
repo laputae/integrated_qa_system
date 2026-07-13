@@ -1,4 +1,5 @@
 """Eval API endpoints."""
+
 import asyncio
 import json
 
@@ -15,6 +16,7 @@ router = APIRouter()
 
 def _get_qa_system():
     import app as app_module
+
     return app_module.qa_system
 
 
@@ -37,6 +39,7 @@ async def eval_run(request: EvalRunRequest, user: dict = Depends(require_auth)):
     chunk_snapshot = None
     try:
         from base.chunk_config import ChunkConfigManager
+
         chunk_snapshot = ChunkConfigManager().get_config()
     except Exception:
         pass
@@ -82,7 +85,8 @@ async def eval_list_runs(
     return {
         "runs": [
             {
-                "id": r.id, "status": r.status,
+                "id": r.id,
+                "status": r.status,
                 "started_at": r.started_at.isoformat() if r.started_at else None,
                 "completed_at": r.completed_at.isoformat() if r.completed_at else None,
                 "total_questions": r.total_questions,
@@ -94,7 +98,9 @@ async def eval_list_runs(
             }
             for r in runs
         ],
-        "total": total, "limit": limit, "offset": offset,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
     }
 
 
@@ -117,8 +123,11 @@ async def eval_get_run(
     results_data = []
     for r in results:
         item = {
-            "id": r.id, "question": r.question, "ground_truth": r.ground_truth,
-            "answer": r.answer, "faithfulness": r.faithfulness,
+            "id": r.id,
+            "question": r.question,
+            "ground_truth": r.ground_truth,
+            "answer": r.answer,
+            "faithfulness": r.faithfulness,
             "answer_relevancy": r.answer_relevancy,
             "context_precision": r.context_precision,
             "context_recall": r.context_recall,
@@ -133,7 +142,8 @@ async def eval_get_run(
 
     return {
         "run": {
-            "id": run.id, "status": run.status,
+            "id": run.id,
+            "status": run.status,
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "completed_at": run.completed_at.isoformat() if run.completed_at else None,
             "total_questions": run.total_questions,

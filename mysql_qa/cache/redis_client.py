@@ -25,7 +25,7 @@ class RedisClient:
                 port=Config().REDIS_PORT,
                 password=Config().REDIS_PASSWORD,
                 db=Config().REDIS_DB,
-                decode_responses=True
+                decode_responses=True,
             )
             # 记录连接成功
             self.logger.info("Redis 连接成功")
@@ -115,10 +115,9 @@ def get_redis_client():
     return RedisClient.get_instance()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     redcli = RedisClient()
     # print(redcli)
     # print(redcli.client.keys("*"))
     print(redcli.get_data(key="user2"))
     print(redcli.get_answer(query="黑马程序员"))
-

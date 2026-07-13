@@ -1,4 +1,5 @@
 """测试策略选择缓存 + 规则预判"""
+
 from base import Config
 from rag_qa.core.strategy_selector import RulePreJudge, StrategySelector
 
@@ -9,14 +10,14 @@ def test_rule_prejudge():
     cases = [
         # (query, expected)
         ("AI学费多少？JAVA课程大纲是什么？", "子查询检索"),
-        ("1. AI课程 2. JAVA课程",                "子查询检索"),
-        ("学费",                                   "直接检索"),
-        ("如何部署Milvus到生产环境",               "回溯问题检索"),
-        ("AI学科学费是多少",                       "直接检索"),
-        ("JAVA的课程大纲是什么",                   "直接检索"),
-        ("容器化技术有哪些种类",                   "假设问题检索"),
-        ("Milvus的定义",                           "直接检索"),    # Milvus 命中实体规则先于抽象
-        ("今天有什么课",                           "直接检索"),    # 6 字符 → 极短规则
+        ("1. AI课程 2. JAVA课程", "子查询检索"),
+        ("学费", "直接检索"),
+        ("如何部署Milvus到生产环境", "回溯问题检索"),
+        ("AI学科学费是多少", "直接检索"),
+        ("JAVA的课程大纲是什么", "直接检索"),
+        ("容器化技术有哪些种类", "假设问题检索"),
+        ("Milvus的定义", "直接检索"),  # Milvus 命中实体规则先于抽象
+        ("今天有什么课", "直接检索"),  # 6 字符 → 极短规则
     ]
     for query, expected in cases:
         result = rp.prejudge(query)

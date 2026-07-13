@@ -1,4 +1,3 @@
-
 from sqlalchemy.exc import IntegrityError
 
 from db_models.tenant import Tenant

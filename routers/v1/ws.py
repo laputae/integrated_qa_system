@@ -1,4 +1,5 @@
 """WebSocket streaming endpoint (/api/stream)."""
+
 import asyncio
 import json
 import time
@@ -33,6 +34,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.close(code=4001, reason="Token已失效")
                 return
             from gateway.rate_limiter import RateLimiter
+
             limiter = RateLimiter()
             if not limiter.check_stream_limit(user_id, tenant_id):
                 await websocket.close(code=4429, reason="请求过于频繁，请稍后再试")
@@ -48,6 +50,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Lazy import to avoid circular dependency
     import app as app_module
+
     qa_system = app_module.qa_system
     _llm_semaphore = app_module._llm_semaphore
 
@@ -86,55 +89,75 @@ async def websocket_endpoint(websocket: WebSocket):
             greeting_response = check_greeting(query_text)
             if greeting_response:
                 if websocket.client_state == websocket.client_state.CONNECTED:
-                    await websocket.send_json({
-                        "type": "token", "token": greeting_response,
-                        "session_id": session_id,
-                    })
-                    await websocket.send_json({
-                        "type": "end", "session_id": session_id,
-                        "is_complete": True,
-                        "processing_time": time.time() - start_time,
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "token",
+                            "token": greeting_response,
+                            "session_id": session_id,
+                        }
+                    )
+                    await websocket.send_json(
+                        {
+                            "type": "end",
+                            "session_id": session_id,
+                            "is_complete": True,
+                            "processing_time": time.time() - start_time,
+                        }
+                    )
                 break
 
             collected_answer = ""
             async for token_val, is_complete in qa_system.aquery(
-                query_text, _llm_semaphore,
-                user_id=user_id, tenant_id=tenant_id,
-                source_filter=source_filter, session_id=session_id,
+                query_text,
+                _llm_semaphore,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                source_filter=source_filter,
+                session_id=session_id,
                 external_context=external_context,
             ):
                 collected_answer += token_val
                 if is_complete and not collected_answer:
                     if websocket.client_state == websocket.client_state.CONNECTED:
-                        await websocket.send_json({
-                            "type": "end", "session_id": session_id,
-                            "is_complete": True,
-                            "processing_time": time.time() - start_time,
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "end",
+                                "session_id": session_id,
+                                "is_complete": True,
+                                "processing_time": time.time() - start_time,
+                            }
+                        )
                     break
                 if token_val and websocket.client_state == websocket.client_state.CONNECTED:
-                    await websocket.send_json({
-                        "type": "token", "token": token_val,
-                        "session_id": session_id,
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "token",
+                            "token": token_val,
+                            "session_id": session_id,
+                        }
+                    )
                 if is_complete:
-                    guard_result = getattr(qa_system, '_last_guard_result', None)
+                    guard_result = getattr(qa_system, "_last_guard_result", None)
                     if guard_result is not None and guard_result.is_hallucinated:
                         if websocket.client_state == websocket.client_state.CONNECTED:
-                            await websocket.send_json({
-                                "type": "hallucination_warning",
-                                "message": "部分回答内容可能缺乏文档依据，建议核实后使用。",
-                                "details": guard_result.details,
-                                "score": guard_result.score,
-                                "session_id": session_id,
-                            })
+                            await websocket.send_json(
+                                {
+                                    "type": "hallucination_warning",
+                                    "message": "部分回答内容可能缺乏文档依据，建议核实后使用。",
+                                    "details": guard_result.details,
+                                    "score": guard_result.score,
+                                    "session_id": session_id,
+                                }
+                            )
                     if websocket.client_state == websocket.client_state.CONNECTED:
-                        await websocket.send_json({
-                            "type": "end", "session_id": session_id,
-                            "is_complete": True,
-                            "processing_time": time.time() - start_time,
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "end",
+                                "session_id": session_id,
+                                "is_complete": True,
+                                "processing_time": time.time() - start_time,
+                            }
+                        )
                     break
                 await asyncio.sleep(0.01)
     except WebSocketDisconnect as e:

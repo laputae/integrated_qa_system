@@ -70,9 +70,14 @@ class ChunkConfigManager:
     def update_config(self, updates: dict):
         """Update runtime configuration (in-memory only, does not persist to disk)."""
         allowed_keys = {
-            "default_strategy", "doc_type_strategies", "semantic_model_path",
-            "semantic_device", "semantic_fallback_strategy",
-            "parent_chunk_size", "child_chunk_size", "chunk_overlap",
+            "default_strategy",
+            "doc_type_strategies",
+            "semantic_model_path",
+            "semantic_device",
+            "semantic_fallback_strategy",
+            "parent_chunk_size",
+            "child_chunk_size",
+            "chunk_overlap",
         }
         with self._config_lock:
             for key, value in updates.items():

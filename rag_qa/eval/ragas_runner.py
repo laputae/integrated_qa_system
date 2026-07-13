@@ -4,6 +4,7 @@ RAGAS evaluation integration helpers.
 Extracted from eval_service.py to keep each module under 300 lines.
 Standalone functions that take dependencies as explicit parameters.
 """
+
 from __future__ import annotations
 
 import json

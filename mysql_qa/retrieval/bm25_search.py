@@ -45,10 +45,10 @@ class BM25Search:
                 self.logger.warning("未加载问题")
                 return
             # 对问题进行分词
-            tokenized_questions = [preprocess_text(q[0])for q in self.original_questions]
+            tokenized_questions = [preprocess_text(q[0]) for q in self.original_questions]
             # print(f'tokenized_questions--》{tokenized_questions}')
             # 把原始的问题存储到redis
-            self.redis_client.set_data(original_key,  [(q[0]) for q in self.original_questions])
+            self.redis_client.set_data(original_key, [(q[0]) for q in self.original_questions])
             # 把分词之后的问题存储到redis
             self.redis_client.set_data(tokenized_key, tokenized_questions)
 
@@ -98,17 +98,18 @@ class BM25Search:
                 answer = self.mysql_client.fetch_answer(original_question)
                 if answer:
                     # 缓存qa
-                    self.redis_client.set_data(f'answer:{query}', answer)
+                    self.redis_client.set_data(f"answer:{query}", answer)
                     # 记录搜索成功
-                    self.logger.info(f'搜索成功，Softamx相似度：{best_score:.3f}')
+                    self.logger.info(f"搜索成功，Softamx相似度：{best_score:.3f}")
                     return answer, False
             # 记录无可靠答案
             self.logger.info(f"未找到可靠答案，最高 Softmax 相似度: {best_score:.3f}")
             # 返回 None 和 True
             return None, True
         except Exception as e:
-            self.logger.error(f'搜索查询失败：{e}')
+            self.logger.error(f"搜索查询失败：{e}")
             return None, True
+
 
 if __name__ == "__main__":
     redis_client = RedisClient()

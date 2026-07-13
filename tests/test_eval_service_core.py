@@ -1,10 +1,12 @@
 """评估自动化管道 — Service Tests (core)"""
+
 from unittest.mock import MagicMock, patch
 
 
 class TestEvalServiceInit:
     def test_service_creation(self):
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         repo = MagicMock()
         rag = MagicMock()
@@ -24,12 +26,14 @@ class TestEvalServiceInit:
 class TestEvalServiceRunEvaluation:
     def test_run_evaluation_no_rag_system(self):
         from rag_qa.eval.eval_service import EvalService
+
         service = EvalService(MagicMock(), MagicMock(), None, MagicMock(), MagicMock())
         result = service.run_evaluation([])
         assert result["error"] == "RAGSystem 未初始化，无法执行评估"
 
     def test_run_evaluation_empty_dataset(self):
         from rag_qa.eval.eval_service import EvalService
+
         service = EvalService(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
         result = service.run_evaluation([])
         assert result["error"] == "评估数据集为空"
@@ -37,6 +41,7 @@ class TestEvalServiceRunEvaluation:
     @patch("rag_qa.eval.eval_service.EvalService._load_default_dataset")
     def test_run_evaluation_loads_default_dataset(self, mock_load, sample_dataset):
         from rag_qa.eval.eval_service import EvalService
+
         mock_load.return_value = sample_dataset
         config = MagicMock()
         config.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD = 0.6
@@ -54,8 +59,10 @@ class TestEvalServiceRunEvaluation:
 
         service = EvalService(config, repo, rag_system, MagicMock(), MagicMock())
 
-        with patch("rag_qa.eval.eval_service.prepare_ragas_dataset") as mock_prep, \
-             patch("rag_qa.eval.eval_service.run_ragas") as mock_ragas:
+        with (
+            patch("rag_qa.eval.eval_service.prepare_ragas_dataset") as mock_prep,
+            patch("rag_qa.eval.eval_service.run_ragas") as mock_ragas,
+        ):
             mock_prep.return_value = MagicMock()
             mock_ragas.return_value = {
                 "faithfulness": [0.9, 0.85, 0.88],
@@ -72,6 +79,7 @@ class TestEvalServiceRunEvaluation:
 
     def test_run_evaluation_pipeline_error(self):
         from rag_qa.eval.eval_service import EvalService
+
         repo = MagicMock()
         mock_run = MagicMock()
         mock_run.id = 1
@@ -91,6 +99,7 @@ class TestEvalServiceRunEvaluation:
     def test_run_evaluation_individual_failure(self, sample_dataset):
         """One question fails but the evaluation continues."""
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         config.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD = 0.6
         config.EVAL_REGRESSION_CONSECUTIVE_RUNS = 3
@@ -111,8 +120,10 @@ class TestEvalServiceRunEvaluation:
 
         service = EvalService(config, repo, rag_system, MagicMock(), MagicMock())
 
-        with patch("rag_qa.eval.eval_service.prepare_ragas_dataset") as mock_prep, \
-             patch("rag_qa.eval.eval_service.run_ragas") as mock_ragas:
+        with (
+            patch("rag_qa.eval.eval_service.prepare_ragas_dataset") as mock_prep,
+            patch("rag_qa.eval.eval_service.run_ragas") as mock_ragas,
+        ):
             mock_prep.return_value = MagicMock()
             mock_ragas.return_value = {
                 "faithfulness": [0.0, 0.85, 0.88],
@@ -129,6 +140,7 @@ class TestEvalServiceRunEvaluation:
 class TestEvalServiceRegression:
     def test_check_regression_insufficient_runs(self):
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         config.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD = 0.6
         config.EVAL_REGRESSION_CONSECUTIVE_RUNS = 3
@@ -140,6 +152,7 @@ class TestEvalServiceRegression:
 
     def test_check_regression_detected(self):
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         config.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD = 0.6
         config.EVAL_REGRESSION_CONSECUTIVE_RUNS = 3
@@ -151,6 +164,7 @@ class TestEvalServiceRegression:
 
     def test_check_regression_not_detected(self):
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         config.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD = 0.6
         config.EVAL_REGRESSION_CONSECUTIVE_RUNS = 3
@@ -162,6 +176,7 @@ class TestEvalServiceRegression:
 
     def test_check_regression_none_value(self):
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         config.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD = 0.6
         config.EVAL_REGRESSION_CONSECUTIVE_RUNS = 3
@@ -175,6 +190,7 @@ class TestEvalServiceRegression:
 class TestEvalServiceQualityStatus:
     def test_quality_status_unknown(self):
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         repo = MagicMock()
         repo.get_latest_completed.return_value = None
@@ -192,9 +208,16 @@ class TestEvalServiceQualityStatus:
         config.EVAL_QUALITY_CRITICAL_THRESHOLD = 0.4
         config.EVAL_QUALITY_WARNING_THRESHOLD = 0.6
 
-        latest = EvalRun(id=1, status="completed", avg_faithfulness=0.85,
-                         avg_answer_relevancy=0.90, avg_context_precision=0.78,
-                         avg_context_recall=0.82, total_questions=10, triggered_by="manual")
+        latest = EvalRun(
+            id=1,
+            status="completed",
+            avg_faithfulness=0.85,
+            avg_answer_relevancy=0.90,
+            avg_context_precision=0.78,
+            avg_context_recall=0.82,
+            total_questions=10,
+            triggered_by="manual",
+        )
         repo = MagicMock()
         repo.get_latest_completed.return_value = latest
         repo.count_runs.return_value = 5
@@ -206,6 +229,7 @@ class TestEvalServiceQualityStatus:
     def test_quality_status_warning(self):
         from db_models.eval_run import EvalRun
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         config.EVAL_QUALITY_CRITICAL_THRESHOLD = 0.4
         config.EVAL_QUALITY_WARNING_THRESHOLD = 0.6
@@ -221,6 +245,7 @@ class TestEvalServiceQualityStatus:
     def test_quality_status_critical(self):
         from db_models.eval_run import EvalRun
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         config.EVAL_QUALITY_CRITICAL_THRESHOLD = 0.4
         config.EVAL_QUALITY_WARNING_THRESHOLD = 0.6
@@ -229,8 +254,10 @@ class TestEvalServiceQualityStatus:
         repo.get_latest_completed.return_value = latest
         repo.count_runs.return_value = 10
         service = EvalService(config, repo, MagicMock(), MagicMock(), MagicMock())
-        with patch("rag_qa.eval.quality_reporter.check_regression", return_value={"detected": True}), \
-             patch("rag_qa.eval.quality_reporter._compute_trend_direction", return_value="declining"):
+        with (
+            patch("rag_qa.eval.quality_reporter.check_regression", return_value={"detected": True}),
+            patch("rag_qa.eval.quality_reporter._compute_trend_direction", return_value="declining"),
+        ):
             status = service.get_quality_status()
         assert status["quality_status"] == "critical"
 
@@ -238,6 +265,7 @@ class TestEvalServiceQualityStatus:
 class TestEvalServiceTrendDirection:
     def test_trend_improving(self):
         from rag_qa.eval.eval_service import EvalService
+
         repo = MagicMock()
         repo.get_recent_metrics.return_value = [0.90, 0.88, 0.85, 0.70, 0.65]
         service = EvalService(MagicMock(), repo, MagicMock(), MagicMock(), MagicMock())
@@ -245,6 +273,7 @@ class TestEvalServiceTrendDirection:
 
     def test_trend_declining(self):
         from rag_qa.eval.eval_service import EvalService
+
         repo = MagicMock()
         repo.get_recent_metrics.return_value = [0.60, 0.65, 0.70, 0.85, 0.90]
         service = EvalService(MagicMock(), repo, MagicMock(), MagicMock(), MagicMock())
@@ -252,6 +281,7 @@ class TestEvalServiceTrendDirection:
 
     def test_trend_stable(self):
         from rag_qa.eval.eval_service import EvalService
+
         repo = MagicMock()
         repo.get_recent_metrics.return_value = [0.80, 0.81, 0.79, 0.82, 0.80]
         service = EvalService(MagicMock(), repo, MagicMock(), MagicMock(), MagicMock())
@@ -259,6 +289,7 @@ class TestEvalServiceTrendDirection:
 
     def test_trend_insufficient_data(self):
         from rag_qa.eval.eval_service import EvalService
+
         repo = MagicMock()
         repo.get_recent_metrics.return_value = [0.80]
         service = EvalService(MagicMock(), repo, MagicMock(), MagicMock(), MagicMock())

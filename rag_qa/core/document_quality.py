@@ -3,20 +3,22 @@ Document text cleaning and quality assessment utilities.
 
 Extracted from llamaindex_processor.py to keep each module under 300 lines.
 """
+
 import re
 
 # ---- CJK character ranges ----
 
-_CJK_START = 0x4E00        # CJK统一表意文字起始
-_CJK_END = 0x9FFF          # CJK统一表意文字结尾
+_CJK_START = 0x4E00  # CJK统一表意文字起始
+_CJK_END = 0x9FFF  # CJK统一表意文字结尾
 _CJK_EXT_A_START = 0x3400  # CJK扩展A起始
-_CJK_EXT_A_END = 0x4DBF    # CJK扩展A结尾
-_STANDARD_PUNCT = set(',.;:!?"\'()[]{}<>-+/\\| \t\n\r@#$%^&*~`=')
+_CJK_EXT_A_END = 0x4DBF  # CJK扩展A结尾
+_STANDARD_PUNCT = set(",.;:!?\"'()[]{}<>-+/\\| \t\n\r@#$%^&*~`=")
 
 LOW_QUALITY_THRESHOLD = 0.3
 
 
 # ---- Text cleaning ----
+
 
 def clean_document_text(text: str) -> str:
     """OCR文本预处理管道：去除噪音、规范化空白、统一标点"""
@@ -24,46 +26,44 @@ def clean_document_text(text: str) -> str:
         return text
 
     # 1. 去除零宽字符
-    text = re.sub(
-        r'[­ -‏   ⁠-⁤　﻿￾￿]',
-        '', text
-    )
+    text = re.sub(r"[­ -‏   ⁠-⁤　﻿￾￿]", "", text)
 
     # 2. 规范化换行 → 单 \n
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
     # 3. 统一中英文标点
-    text = text.replace('，', ',')
-    text = text.replace('；', ';')
-    text = text.replace('：', ':')
-    text = text.replace('（', '(').replace('）', ')')
+    text = text.replace("，", ",")
+    text = text.replace("；", ";")
+    text = text.replace("：", ":")
+    text = text.replace("（", "(").replace("）", ")")
     text = text.replace('"', '"').replace('"', '"')
-    text = text.replace(''', "'").replace(''', "'")
-    text = text.replace('【', '[').replace('】', ']')
-    text = text.replace('《', '<').replace('》', '>')
-    text = text.replace('！', '!')
-    text = text.replace('？', '?')
-    text = text.replace('～', '~')
+    text = text.replace(""", "'").replace(""", "'")
+    text = text.replace("【", "[").replace("】", "]")
+    text = text.replace("《", "<").replace("》", ">")
+    text = text.replace("！", "!")
+    text = text.replace("？", "?")
+    text = text.replace("～", "~")
 
     # 4. 去除页码/页眉/页脚噪音
-    text = re.sub(r'^\s*\d{1,4}\s*$', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^\s*[\(（]?\d{1,4}[\)）]?\s*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\d{1,4}\s*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[\(（]?\d{1,4}[\)）]?\s*$", "", text, flags=re.MULTILINE)
 
     # 5. 压缩多余空白
-    text = re.sub(r'[ \t]{2,}', ' ', text)
-    text = re.sub(r'^[ \t]+|[ \t]+$', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\n +', '\n', text)
-    text = re.sub(r' +\n', '\n', text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"^[ \t]+|[ \t]+$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\n +", "\n", text)
+    text = re.sub(r" +\n", "\n", text)
 
     # 6. 清理连续空行
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     text = text.strip()
 
     return text
 
 
 # ---- Quality assessment ----
+
 
 def _is_content_char(c: str) -> bool:
     """是否为内容字符（中文、拉丁字母、数字）"""
@@ -109,19 +109,16 @@ def estimate_document_quality(doc) -> float:
 
     # 3. OCR 噪音分数（权重 0.30）
     # 3a. 连续重复字符
-    repeat_count = len(re.findall(r'(.)\1{5,}', text))
+    repeat_count = len(re.findall(r"(.)\1{5,}", text))
     repeat_penalty = min(repeat_count * 0.1, 0.30)
 
     # 3b. 非标准字符惩罚
-    non_standard = sum(
-        1 for c in text
-        if not _is_content_char(c) and c not in _STANDARD_PUNCT and not c.isspace()
-    )
+    non_standard = sum(1 for c in text if not _is_content_char(c) and c not in _STANDARD_PUNCT and not c.isspace())
     ns_ratio = non_standard / total
     ns_penalty = min(ns_ratio * 2.0, 0.40)
 
     # 3c. 行结构一致性
-    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
     if lines:
         avg_line_len = sum(len(l) for l in lines) / len(lines)
         if avg_line_len < 15:
@@ -137,9 +134,7 @@ def estimate_document_quality(doc) -> float:
     noise_score = 1.0 - noise_penalty
 
     # 综合评分
-    quality = (0.30 * length_score +
-               0.40 * content_ratio +
-               0.30 * noise_score)
+    quality = 0.30 * length_score + 0.40 * content_ratio + 0.30 * noise_score
     quality = max(0.0, min(1.0, quality))
     # 几乎没有有效内容时硬封顶
     if content_ratio < 0.1:

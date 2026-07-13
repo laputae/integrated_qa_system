@@ -25,49 +25,65 @@ def run_ddl():
         existing_cols = {
             row[0]
             for row in conn.execute(
-                text("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'")
+                text(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'"
+                )
             ).fetchall()
         }
 
         ddl_statements = []
         if "tenant_id" not in existing_cols:
-            ddl_statements.extend([
-                "ALTER TABLE users ADD COLUMN tenant_id INT DEFAULT NULL",
-                "ALTER TABLE users ADD INDEX idx_users_tenant (tenant_id)",
-            ])
+            ddl_statements.extend(
+                [
+                    "ALTER TABLE users ADD COLUMN tenant_id INT DEFAULT NULL",
+                    "ALTER TABLE users ADD INDEX idx_users_tenant (tenant_id)",
+                ]
+            )
         existing_cols = {
             row[0]
             for row in conn.execute(
-                text("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'conversations'")
+                text(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'conversations'"
+                )
             ).fetchall()
         }
         if "tenant_id" not in existing_cols:
-            ddl_statements.extend([
-                "ALTER TABLE conversations ADD COLUMN tenant_id INT DEFAULT NULL",
-                "ALTER TABLE conversations ADD INDEX idx_conv_tenant (tenant_id)",
-            ])
+            ddl_statements.extend(
+                [
+                    "ALTER TABLE conversations ADD COLUMN tenant_id INT DEFAULT NULL",
+                    "ALTER TABLE conversations ADD INDEX idx_conv_tenant (tenant_id)",
+                ]
+            )
         existing_cols = {
             row[0]
             for row in conn.execute(
-                text("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'refresh_tokens'")
+                text(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'refresh_tokens'"
+                )
             ).fetchall()
         }
         if "tenant_id" not in existing_cols:
-            ddl_statements.extend([
-                "ALTER TABLE refresh_tokens ADD COLUMN tenant_id INT DEFAULT NULL",
-                "ALTER TABLE refresh_tokens ADD INDEX idx_rt_tenant (tenant_id)",
-            ])
+            ddl_statements.extend(
+                [
+                    "ALTER TABLE refresh_tokens ADD COLUMN tenant_id INT DEFAULT NULL",
+                    "ALTER TABLE refresh_tokens ADD INDEX idx_rt_tenant (tenant_id)",
+                ]
+            )
         existing_cols = {
             row[0]
             for row in conn.execute(
-                text("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'audit_logs'")
+                text(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'audit_logs'"
+                )
             ).fetchall()
         }
         if "tenant_id" not in existing_cols:
-            ddl_statements.extend([
-                "ALTER TABLE audit_logs ADD COLUMN tenant_id INT DEFAULT NULL",
-                "ALTER TABLE audit_logs ADD INDEX idx_audit_tenant (tenant_id)",
-            ])
+            ddl_statements.extend(
+                [
+                    "ALTER TABLE audit_logs ADD COLUMN tenant_id INT DEFAULT NULL",
+                    "ALTER TABLE audit_logs ADD INDEX idx_audit_tenant (tenant_id)",
+                ]
+            )
 
         for stmt in ddl_statements:
             print(f"DDL: {stmt}")
@@ -107,11 +123,7 @@ def seed():
             (Conversation, "conversations"),
             (RefreshToken, "refresh_tokens"),
         ]:
-            result = session.execute(
-                update(model)
-                .where(model.tenant_id.is_(None))
-                .values(tenant_id=tenant_id)
-            )
+            result = session.execute(update(model).where(model.tenant_id.is_(None)).values(tenant_id=tenant_id))
             if result.rowcount > 0:
                 print(f"Migrated {result.rowcount} {label} to default tenant")
 

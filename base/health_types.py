@@ -3,6 +3,7 @@ Health check types: enums, data classes, and circuit breaker.
 
 Extracted from health.py to keep each module under 300 lines.
 """
+
 import time
 from dataclasses import dataclass
 from enum import Enum, IntEnum
@@ -10,6 +11,7 @@ from enum import Enum, IntEnum
 # ============================================================
 # Enums
 # ============================================================
+
 
 class HealthStatus(Enum):
     UNKNOWN = "unknown"
@@ -19,11 +21,11 @@ class HealthStatus(Enum):
 
 
 class DegradationLevel(IntEnum):
-    LEVEL0_FULL = 0       # all healthy
-    LEVEL1_NO_REDIS = 1   # Redis down, no caching
+    LEVEL0_FULL = 0  # all healthy
+    LEVEL1_NO_REDIS = 1  # Redis down, no caching
     LEVEL2_NO_MILVUS = 2  # Milvus/embedding/reranker down, BM25 only
-    LEVEL3_NO_LLM = 3     # LLM down, BM25 or raw context
-    LEVEL4_NO_MYSQL = 4   # MySQL down, 503
+    LEVEL3_NO_LLM = 3  # LLM down, BM25 or raw context
+    LEVEL4_NO_MYSQL = 4  # MySQL down, 503
 
 
 # Maps component name to the degradation level it triggers when unhealthy
@@ -41,14 +43,23 @@ _COMPONENT_DEGRADATION_MAP = {
 
 # Ordered for display
 _COMPONENT_ORDER = [
-    "mysql", "redis", "milvus", "llm", "embedding", "reranker",
-    "classifier", "llm_reranker", "hallucination_guard", "eval_quality",
+    "mysql",
+    "redis",
+    "milvus",
+    "llm",
+    "embedding",
+    "reranker",
+    "classifier",
+    "llm_reranker",
+    "hallucination_guard",
+    "eval_quality",
 ]
 
 
 # ============================================================
 # Data Classes
 # ============================================================
+
 
 @dataclass
 class ComponentHealth:
@@ -73,6 +84,7 @@ class ComponentHealth:
 # ============================================================
 # Circuit Breaker
 # ============================================================
+
 
 class CircuitBreaker:
     """Three-state circuit breaker to avoid hammering downed services."""

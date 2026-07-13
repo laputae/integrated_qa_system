@@ -3,6 +3,7 @@ Chunk sweep report formatting and configuration definitions.
 
 Extracted from chunk_sweep.py to keep each module under 300 lines.
 """
+
 import json
 import os
 from datetime import datetime
@@ -13,25 +14,26 @@ from datetime import datetime
 
 SWEEP_CONFIGS_FULL = [
     # (label, parent_chunk_size, child_chunk_size, chunk_overlap, strategy)
-    ("baseline",         1200, 300, 50,  "recursive"),
-    ("finer",            800,  200, 50,  "recursive"),
-    ("coarser",          1600, 400, 50,  "recursive"),
-    ("more-overlap",     1200, 300, 100, "recursive"),
-    ("less-overlap",     1200, 300, 20,  "recursive"),
-    ("large-parent",     2000, 500, 50,  "recursive"),
-    ("semantic-strategy", 1200, 300, 50,  "semantic"),
+    ("baseline", 1200, 300, 50, "recursive"),
+    ("finer", 800, 200, 50, "recursive"),
+    ("coarser", 1600, 400, 50, "recursive"),
+    ("more-overlap", 1200, 300, 100, "recursive"),
+    ("less-overlap", 1200, 300, 20, "recursive"),
+    ("large-parent", 2000, 500, 50, "recursive"),
+    ("semantic-strategy", 1200, 300, 50, "semantic"),
 ]
 
 SWEEP_CONFIGS_FAST = [
-    ("baseline",    1200, 300, 50, "recursive"),
-    ("finer",       800,  200, 50, "recursive"),
-    ("coarser",     1600, 400, 50, "recursive"),
+    ("baseline", 1200, 300, 50, "recursive"),
+    ("finer", 800, 200, 50, "recursive"),
+    ("coarser", 1600, 400, 50, "recursive"),
 ]
 
 
 # ================================================================
 # Report formatting
 # ================================================================
+
 
 def print_report(results, project_root=None):
     """Output a Markdown comparison report of sweep results."""
@@ -55,8 +57,7 @@ def print_report(results, project_root=None):
 
     # Table header
     header = (
-        f"{'配置':<22} {'faithfulness':>13} {'answer_rel':>11} "
-        f"{'ctx_precision':>13} {'ctx_recall':>11} {'耗时(s)':>8}"
+        f"{'配置':<22} {'faithfulness':>13} {'answer_rel':>11} {'ctx_precision':>13} {'ctx_recall':>11} {'耗时(s)':>8}"
     )
     print(f"\n{header}")
     print("-" * len(header))
@@ -96,8 +97,7 @@ def print_report(results, project_root=None):
                 continue
             m = r["metrics"]
             deltas = []
-            for metric in ["faithfulness", "answer_relevancy",
-                           "context_precision", "context_recall"]:
+            for metric in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
                 if bm.get(metric) and m.get(metric):
                     delta = m[metric] - bm[metric]
                     sign = "+" if delta >= 0 else ""
@@ -133,6 +133,8 @@ def print_report(results, project_root=None):
                 "generated_at": datetime.now().isoformat(),
                 "results": results,
             },
-            f, ensure_ascii=False, indent=2,
+            f,
+            ensure_ascii=False,
+            indent=2,
         )
     print(f"JSON 报告已保存: {report_path}")

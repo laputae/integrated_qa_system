@@ -17,8 +17,7 @@ class RateLimiter:
         window = int(time.time()) // 60
         return f"rate_limit:{prefix}:{identifier}:{window}"
 
-    def _tenant_rate_limit_key(self, prefix: str, tenant_id: int,
-                                identifier: str) -> str:
+    def _tenant_rate_limit_key(self, prefix: str, tenant_id: int, identifier: str) -> str:
         window = int(time.time()) // 60
         return f"rate_limit:{prefix}:t{tenant_id}:{identifier}:{window}"
 
@@ -31,8 +30,7 @@ class RateLimiter:
         except Exception:
             return True
 
-    def check(self, key_prefix: str, identifier: str,
-              limit: int, window_seconds: int = 60) -> bool:
+    def check(self, key_prefix: str, identifier: str, limit: int, window_seconds: int = 60) -> bool:
         key = self._rate_limit_key(key_prefix, identifier)
         return self._check_key(key, limit, window_seconds)
 

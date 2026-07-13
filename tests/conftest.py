@@ -1,4 +1,5 @@
 """Shared fixtures for eval pipeline tests."""
+
 import json
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -10,7 +11,11 @@ import pytest
 def sample_dataset():
     return [
         {"question": "人工智能就业课的课程版本是什么？", "ground_truth": "V6.0", "source_filter": None},
-        {"question": "课程的一句话概括是什么？", "ground_truth": "解锁大模型新技能成就高薪AI人才", "source_filter": None},
+        {
+            "question": "课程的一句话概括是什么？",
+            "ground_truth": "解锁大模型新技能成就高薪AI人才",
+            "source_filter": None,
+        },
         {"question": "课程优势有哪些？", "ground_truth": "热门岗位覆盖、与大厂深入合作", "source_filter": None},
     ]
 
@@ -18,6 +23,7 @@ def sample_dataset():
 @pytest.fixture
 def sample_run():
     from db_models.eval_run import EvalRun
+
     return EvalRun(
         id=1,
         status="running",
@@ -30,6 +36,7 @@ def sample_run():
 @pytest.fixture
 def sample_result():
     from db_models.eval_result import EvalResult
+
     return EvalResult(
         id=1,
         run_id=1,
@@ -56,6 +63,7 @@ def mock_session_factory():
 @pytest.fixture
 def eval_repo(mock_session_factory):
     from repositories.eval_repo import EvalRepository
+
     factory, _ = mock_session_factory
     return EvalRepository(factory)
 
@@ -74,6 +82,7 @@ def test_app():
     app_module.qa_system = mock_qa
 
     from fastapi.testclient import TestClient
+
     client = TestClient(fastapi_app)
 
     yield client, mock_qa

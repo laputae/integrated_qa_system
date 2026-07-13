@@ -9,6 +9,7 @@ Each registered model provides:
   - create_milvus_model(path, device) -> callable compatible with BGEM3EmbeddingFunction interface
   - create_llamaindex_model(path, device) -> BaseEmbedding compatible with LlamaIndex
 """
+
 import json
 import os
 
@@ -23,8 +24,7 @@ MODEL_DIR = os.path.join(_rag_qa_path, "models")
 _registry: dict = {}
 
 
-def register(name: str, *, dense_dim: int, supports_sparse: bool = False,
-             milvus_factory=None, llamaindex_factory=None):
+def register(name: str, *, dense_dim: int, supports_sparse: bool = False, milvus_factory=None, llamaindex_factory=None):
     """Register an embedding model."""
     _registry[name] = {
         "dense_dim": dense_dim,
@@ -54,8 +54,7 @@ def list_models() -> list:
     return list(_registry.keys())
 
 
-def create_milvus_model(name: str, model_path: str = None,
-                        device: str = None):
+def create_milvus_model(name: str, model_path: str = None, device: str = None):
     """Create a model callable for pymilvus/MilvusClient.
 
     Returns callable with signature: __call__(texts: list[str]) -> dict
@@ -65,32 +64,25 @@ def create_milvus_model(name: str, model_path: str = None,
     if info["milvus_factory"] is None:
         raise ValueError(f"Model '{name}' does not support milvus interface.")
     if device is None:
-        device = 'cpu'
+        device = "cpu"
     if model_path is None:
         model_path = os.path.join(MODEL_DIR, name)
     if not os.path.exists(model_path):
-        logger.warning(
-            f"Model directory not found: {model_path}. "
-            f"Will be downloaded on first use (requires internet)."
-        )
+        logger.warning(f"Model directory not found: {model_path}. Will be downloaded on first use (requires internet).")
     return info["milvus_factory"](model_path=model_path, device=device)
 
 
-def create_llamaindex_model(name: str, model_path: str = None,
-                            device: str = None):
+def create_llamaindex_model(name: str, model_path: str = None, device: str = None):
     """Create an embedding model for LlamaIndex."""
     info = get_model_info(name)
     if info["llamaindex_factory"] is None:
         raise ValueError(f"Model '{name}' does not support llama_index interface.")
     if device is None:
-        device = 'cpu'
+        device = "cpu"
     if model_path is None:
         model_path = os.path.join(MODEL_DIR, name)
     if not os.path.exists(model_path):
-        logger.warning(
-            f"Model directory not found: {model_path}. "
-            f"Will be downloaded on first use (requires internet)."
-        )
+        logger.warning(f"Model directory not found: {model_path}. Will be downloaded on first use (requires internet).")
     return info["llamaindex_factory"](model_path=model_path, device=device)
 
 
@@ -105,7 +97,7 @@ try:
     def _bge_m3_milvus_factory(model_path, device, **kwargs):
         return _BGEM3(
             model_name_or_path=model_path,
-            use_fp16=(device == 'cuda'),
+            use_fp16=(device == "cuda"),
             device=device,
         )
 
@@ -139,16 +131,20 @@ try:
 
         def _embed(texts):
             import numpy as np
+
             dense = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
             return {
                 "dense": [np.array(vec, dtype=np.float32) for vec in dense],
                 "sparse": [{} for _ in texts],
             }
+
         return _embed
 
     try:
+
         def _bge_large_zh_llamaindex_factory(model_path, device, **kwargs):
             return _HFEmb(model_name=model_path, device=device)
+
         _llamaindex_bge_large_zh = _bge_large_zh_llamaindex_factory
     except ImportError:
         _llamaindex_bge_large_zh = None
@@ -166,21 +162,26 @@ except ImportError as e:
 
 # --- text2vec-large-chinese (dense-only via sentence-transformers) ---
 try:
+
     def _text2vec_milvus_factory(model_path, device, **kwargs):
         model = _ST(model_path, device=device)
 
         def _embed(texts):
             import numpy as np
+
             dense = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
             return {
                 "dense": [np.array(vec, dtype=np.float32) for vec in dense],
                 "sparse": [{} for _ in texts],
             }
+
         return _embed
 
     try:
+
         def _text2vec_llamaindex_factory(model_path, device, **kwargs):
             return _HFEmb(model_name=model_path, device=device)
+
         _llamaindex_text2vec = _text2vec_llamaindex_factory
     except ImportError:
         _llamaindex_text2vec = None
@@ -233,10 +234,7 @@ def batch_embed(
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"Checkpoint unreadable, starting fresh: {e}")
 
-    batches = [
-        (idx, texts[i:i + batch_size])
-        for idx, i in enumerate(range(0, len(texts), batch_size))
-    ]
+    batches = [(idx, texts[i : i + batch_size]) for idx, i in enumerate(range(0, len(texts), batch_size))]
 
     all_dense = []
     all_sparse = []
@@ -249,8 +247,8 @@ def batch_embed(
             embeddings = embedding_fn(batch_texts)
             sparse_batch = []
             for s in embeddings["sparse"]:
-                if hasattr(s, 'indices'):
-                    indices = s.indices if hasattr(s, 'indices') else s.col
+                if hasattr(s, "indices"):
+                    indices = s.indices if hasattr(s, "indices") else s.col
                     sparse_batch.append(dict(zip(indices, s.data)))
                 elif isinstance(s, dict):
                     sparse_batch.append(s)
@@ -266,10 +264,13 @@ def batch_embed(
 
             if checkpoint_path:
                 completed_batches.add(batch_idx)
-                _save_checkpoint(checkpoint_path, {
-                    "completed_batches": sorted(completed_batches),
-                    "total_texts": len(texts),
-                })
+                _save_checkpoint(
+                    checkpoint_path,
+                    {
+                        "completed_batches": sorted(completed_batches),
+                        "total_texts": len(texts),
+                    },
+                )
 
         except Exception as e:
             logger.error(
@@ -277,8 +278,7 @@ def batch_embed(
                 f"(texts {batch_idx * batch_size}-{batch_idx * batch_size + len(batch_texts)}): {e}"
             )
             raise RuntimeError(
-                f"Embedding failed at batch {batch_idx}. "
-                f"Set resume=True and rerun to skip completed batches."
+                f"Embedding failed at batch {batch_idx}. Set resume=True and rerun to skip completed batches."
             ) from e
 
     if checkpoint_path and os.path.exists(checkpoint_path):

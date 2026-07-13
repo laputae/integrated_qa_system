@@ -13,8 +13,7 @@ class EvalRepository:
 
     # ---- Run CRUD ----
 
-    def create_run(self, triggered_by: str = "manual",
-                   chunk_config_snapshot: dict | None = None) -> EvalRun:
+    def create_run(self, triggered_by: str = "manual", chunk_config_snapshot: dict | None = None) -> EvalRun:
         with self.session_factory() as session:
             run = EvalRun(
                 status="running",
@@ -56,13 +55,7 @@ class EvalRepository:
 
     def get_runs(self, limit: int = 20, offset: int = 0) -> list[EvalRun]:
         with self.session_factory() as session:
-            return (
-                session.query(EvalRun)
-                .order_by(desc(EvalRun.created_at))
-                .offset(offset)
-                .limit(limit)
-                .all()
-            )
+            return session.query(EvalRun).order_by(desc(EvalRun.created_at)).offset(offset).limit(limit).all()
 
     def count_runs(self) -> int:
         with self.session_factory() as session:
@@ -79,8 +72,10 @@ class EvalRepository:
 
     def get_recent_metrics(self, metric_name: str, limit: int = 10) -> list[float]:
         valid_metrics = {
-            "faithfulness", "answer_relevancy",
-            "context_precision", "context_recall",
+            "faithfulness",
+            "answer_relevancy",
+            "context_precision",
+            "context_recall",
         }
         if metric_name not in valid_metrics:
             raise ValueError(f"Invalid metric: {metric_name}")
@@ -100,10 +95,15 @@ class EvalRepository:
 
     # ---- Result CRUD ----
 
-    def insert_result(self, run_id: int, question: str, ground_truth: str,
-                      answer: str | None = None,
-                      contexts: list[str] | None = None,
-                      source_filter: str | None = None) -> EvalResult:
+    def insert_result(
+        self,
+        run_id: int,
+        question: str,
+        ground_truth: str,
+        answer: str | None = None,
+        contexts: list[str] | None = None,
+        source_filter: str | None = None,
+    ) -> EvalResult:
         with self.session_factory() as session:
             result = EvalResult(
                 run_id=run_id,
@@ -131,19 +131,9 @@ class EvalRepository:
 
     def get_results_for_run(self, run_id: int) -> list[EvalResult]:
         with self.session_factory() as session:
-            return (
-                session.query(EvalResult)
-                .filter(EvalResult.run_id == run_id)
-                .order_by(EvalResult.id)
-                .all()
-            )
+            return session.query(EvalResult).filter(EvalResult.run_id == run_id).order_by(EvalResult.id).all()
 
     def get_result_ids_for_run(self, run_id: int) -> list[int]:
         with self.session_factory() as session:
-            rows = (
-                session.query(EvalResult.id)
-                .filter(EvalResult.run_id == run_id)
-                .order_by(EvalResult.id)
-                .all()
-            )
+            rows = session.query(EvalResult.id).filter(EvalResult.run_id == run_id).order_by(EvalResult.id).all()
             return [row[0] for row in rows]

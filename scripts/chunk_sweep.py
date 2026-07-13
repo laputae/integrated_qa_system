@@ -49,7 +49,10 @@ def update_chunk_config(parent, child, overlap, strategy):
     )
     logger.info(
         "ChunkConfig 已更新: parent=%s child=%s overlap=%s strategy=%s",
-        parent, child, overlap, strategy,
+        parent,
+        child,
+        overlap,
+        strategy,
     )
 
 
@@ -70,13 +73,13 @@ def drop_collection(client, collection_name):
 def reindex_documents(data_dir, parent, child, overlap):
     """用当前 chunk 参数重新处理文档，返回子块列表。"""
     from rag_qa.core.llamaindex_processor import process_documents
+
     chunks = process_documents(data_dir, parent, child, overlap)
     logger.info("重新索引完成: %s 个子块", len(chunks))
     return chunks
 
 
-def run_single_sweep(config_label, parent, child, overlap, strategy,
-                     data_dir, conf, sweep_collection_name):
+def run_single_sweep(config_label, parent, child, overlap, strategy, data_dir, conf, sweep_collection_name):
     """运行单组配置的完整评估流程。"""
     from openai import OpenAI
 
@@ -125,8 +128,8 @@ def run_single_sweep(config_label, parent, child, overlap, strategy,
             except Exception as e:
                 if attempt < conf.LLM_MAX_RETRIES - 1:
                     import time as _time
-                    delay = min(conf.LLM_RETRY_BASE_DELAY * (2 ** attempt),
-                                conf.LLM_RETRY_MAX_DELAY)
+
+                    delay = min(conf.LLM_RETRY_BASE_DELAY * (2**attempt), conf.LLM_RETRY_MAX_DELAY)
                     logger.warning("LLM 重试 %s/%s: %s", attempt + 1, conf.LLM_MAX_RETRIES, e)
                     _time.sleep(delay)
                 else:
@@ -138,9 +141,11 @@ def run_single_sweep(config_label, parent, child, overlap, strategy,
 
     # 5. 创建 EvalService 并运行评估
     from db_models.base import SessionLocal
+
     repo = EvalRepository(SessionLocal)
     eval_service = EvalService(
-        config=conf, repo=repo,
+        config=conf,
+        repo=repo,
         rag_system=rag_system,
         llm_client=llm_client,
         vector_store=vector_store,
@@ -175,15 +180,20 @@ def run_single_sweep(config_label, parent, child, overlap, strategy,
 def main():
     parser = argparse.ArgumentParser(description="离线 Chunk 参数扫描工具")
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="仅打印候选配置，不实际运行",
     )
     parser.add_argument(
-        "--configs", choices=["fast", "full"], default="full",
+        "--configs",
+        choices=["fast", "full"],
+        default="full",
         help="扫描配置集: fast (3组) 或 full (7组)",
     )
     parser.add_argument(
-        "--data-dir", type=str, default=None,
+        "--data-dir",
+        type=str,
+        default=None,
         help="数据目录路径（默认使用 config.ini 中 VALID_SOURCES 对应的 data/ 子目录）",
     )
     args = parser.parse_args()
@@ -194,10 +204,7 @@ def main():
     if args.dry_run:
         print("\n候选配置 (dry-run):")
         for label, parent, child, overlap, strategy in configs:
-            print(
-                f"  {label:<22} "
-                f"parent={parent} child={child} overlap={overlap} strategy={strategy}"
-            )
+            print(f"  {label:<22} parent={parent} child={child} overlap={overlap} strategy={strategy}")
         print(f"\n共 {len(configs)} 组配置")
         return
 
@@ -220,13 +227,21 @@ def main():
     results = []
     for i, (label, parent, child, overlap, strategy) in enumerate(configs):
         collection_name = create_temp_collection_name(label)
-        print(f"[{i+1}/{len(configs)}] 运行: {label} "
-              f"(parent={parent}, child={child}, overlap={overlap}, strategy={strategy})")
+        print(
+            f"[{i + 1}/{len(configs)}] 运行: {label} "
+            f"(parent={parent}, child={child}, overlap={overlap}, strategy={strategy})"
+        )
 
         try:
             result = run_single_sweep(
-                label, parent, child, overlap, strategy,
-                data_dir, conf, collection_name,
+                label,
+                parent,
+                child,
+                overlap,
+                strategy,
+                data_dir,
+                conf,
+                collection_name,
             )
         except Exception as e:
             logger.exception("[%s] 扫描失败", label)
@@ -247,6 +262,7 @@ def main():
             # 尝试清理
             try:
                 from pymilvus import MilvusClient
+
                 client = MilvusClient(
                     uri=f"http://{conf.MILVUS_HOST}:{conf.MILVUS_PORT}",
                     db_name=conf.MILVUS_DATABASE_NAME,
@@ -257,9 +273,11 @@ def main():
 
         results.append(result)
         status_icon = "OK" if result["status"] == "completed" else "FAIL"
-        print(f"  -> {status_icon} (run_id={result['run_id']}, "
-              f"faithfulness={result['metrics'].get('faithfulness')}, "
-              f"{result['elapsed_seconds']:.1f}s)\n")
+        print(
+            f"  -> {status_icon} (run_id={result['run_id']}, "
+            f"faithfulness={result['metrics'].get('faithfulness')}, "
+            f"{result['elapsed_seconds']:.1f}s)\n"
+        )
 
     print_report(results, project_root=_project_root)
 

@@ -4,6 +4,7 @@ RAG retrieval strategies: backtracking, subqueries, HyDE.
 Extracted from rag_system.py to keep each module under 300 lines.
 Each strategy is a standalone function that takes its dependencies explicitly.
 """
+
 import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -13,8 +14,14 @@ from .prompts import RAGPrompts
 
 
 def retrieve_with_backtracking(
-    vector_store, llm_callable, redis_client, config,
-    query, source_filter=None, top_k=None, log=None,
+    vector_store,
+    llm_callable,
+    redis_client,
+    config,
+    query,
+    source_filter=None,
+    top_k=None,
+    log=None,
 ):
     """使用回溯问题进行检索。LLM 生成简化查询 → 检索原始文档。"""
     if log is None:
@@ -37,21 +44,19 @@ def retrieve_with_backtracking(
 
     try:
         if not simplified_query:
-            simplified_query = ''.join(
-                llm_callable(backtrack_prompt_template.format(query=query))
-            ).strip()
+            simplified_query = "".join(llm_callable(backtrack_prompt_template.format(query=query))).strip()
             log.info(f"生成的回溯问题: '{simplified_query}'")
             if redis_client:
                 try:
-                    redis_client.set_data(
-                        cache_key, simplified_query, ttl=config.EMBEDDING_CACHE_TTL
-                    )
+                    redis_client.set_data(cache_key, simplified_query, ttl=config.EMBEDDING_CACHE_TTL)
                 except Exception as e:
                     log.warning(f"写入回溯问题缓存失败: {e}")
 
         return vector_store.hybrid_search_with_rerank(
-            simplified_query, k=config.RETRIEVAL_K,
-            source_filter=source_filter, top_k=top_k,
+            simplified_query,
+            k=config.RETRIEVAL_K,
+            source_filter=source_filter,
+            top_k=top_k,
         )
     except Exception as e:
         log.error(f"回溯问题策略执行失败: {e}")
@@ -59,8 +64,14 @@ def retrieve_with_backtracking(
 
 
 def retrieve_with_subqueries(
-    vector_store, llm_callable, redis_client, config,
-    query, source_filter=None, top_k=None, log=None,
+    vector_store,
+    llm_callable,
+    redis_client,
+    config,
+    query,
+    source_filter=None,
+    top_k=None,
+    log=None,
 ):
     """使用子查询进行检索。LLM 分解查询 → 并行检索 → 去重合并。"""
     if log is None:
@@ -83,16 +94,12 @@ def retrieve_with_subqueries(
 
     try:
         if not subqueries:
-            subqueries_text = ''.join(
-                llm_callable(subquery_prompt_template.format(query=query))
-            ).strip()
+            subqueries_text = "".join(llm_callable(subquery_prompt_template.format(query=query))).strip()
             subqueries = [q.strip() for q in subqueries_text.split("\n") if q.strip()]
             log.info(f"生成的子查询: {subqueries}")
             if redis_client:
                 try:
-                    redis_client.set_data(
-                        cache_key, subqueries, ttl=config.EMBEDDING_CACHE_TTL
-                    )
+                    redis_client.set_data(cache_key, subqueries, ttl=config.EMBEDDING_CACHE_TTL)
                 except Exception as e:
                     log.warning(f"写入子查询缓存失败: {e}")
         if not subqueries:
@@ -104,10 +111,8 @@ def retrieve_with_subqueries(
         sub_k = top_k if top_k is not None else config.CANDIDATE_M // 2
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_subq = {
-                executor.submit(
-                    vector_store.hybrid_search_with_rerank,
-                    sub_q, sub_k, source_filter
-                ): sub_q for sub_q in subqueries
+                executor.submit(vector_store.hybrid_search_with_rerank, sub_q, sub_k, source_filter): sub_q
+                for sub_q in subqueries
             }
             for future in as_completed(future_to_subq):
                 sub_q = future_to_subq[future]
@@ -124,13 +129,19 @@ def retrieve_with_subqueries(
         log.info(f"所有子查询共检索到 {len(all_docs)} 个文档, 去重后剩 {len(unique_docs)} 个")
         return unique_docs
     except Exception as e:
-        log.error(f'子查询存在错误：{e}')
+        log.error(f"子查询存在错误：{e}")
         return []
 
 
 def retrieve_with_hyde(
-    vector_store, llm_callable, redis_client, config,
-    query, source_filter=None, top_k=None, log=None,
+    vector_store,
+    llm_callable,
+    redis_client,
+    config,
+    query,
+    source_filter=None,
+    top_k=None,
+    log=None,
 ):
     """使用 HyDE (假设文档) 进行检索。LLM 生成假设答案 → 以答案为 query 检索。"""
     if log is None:
@@ -153,21 +164,19 @@ def retrieve_with_hyde(
 
     try:
         if not hypo_answer:
-            hypo_answer = ''.join(
-                llm_callable(hyde_prompt_template.format(query=query))
-            ).strip()
+            hypo_answer = "".join(llm_callable(hyde_prompt_template.format(query=query))).strip()
             log.info(f"HyDE 生成的假设答案: '{hypo_answer}'")
             if redis_client:
                 try:
-                    redis_client.set_data(
-                        cache_key, hypo_answer, ttl=config.EMBEDDING_CACHE_TTL
-                    )
+                    redis_client.set_data(cache_key, hypo_answer, ttl=config.EMBEDDING_CACHE_TTL)
                 except Exception as e:
                     log.warning(f"写入 HyDE 缓存失败: {e}")
 
         return vector_store.hybrid_search_with_rerank(
-            hypo_answer, k=config.RETRIEVAL_K,
-            source_filter=source_filter, top_k=top_k,
+            hypo_answer,
+            k=config.RETRIEVAL_K,
+            source_filter=source_filter,
+            top_k=top_k,
         )
     except Exception as e:
         log.error(f"HyDE 策略执行失败: {e}")

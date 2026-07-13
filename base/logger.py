@@ -10,18 +10,16 @@ from base.config import Config
 
 # ---- Request context (contextvars — async-safe) ----
 
-_request_id_var = contextvars.ContextVar('request_id', default=None)
-_user_id_var = contextvars.ContextVar('user_id', default=None)
-_tenant_id_var = contextvars.ContextVar('tenant_id', default=None)
+_request_id_var = contextvars.ContextVar("request_id", default=None)
+_user_id_var = contextvars.ContextVar("user_id", default=None)
+_tenant_id_var = contextvars.ContextVar("tenant_id", default=None)
 
 
 class RequestContext:
     """Async-safe request-scoped context for structured log enrichment."""
 
     @staticmethod
-    def set(request_id: str | None = None,
-            user_id: int | None = None,
-            tenant_id: int | None = None):
+    def set(request_id: str | None = None, user_id: int | None = None, tenant_id: int | None = None):
         if request_id is not None:
             _request_id_var.set(request_id)
         if user_id is not None:
@@ -32,9 +30,9 @@ class RequestContext:
     @staticmethod
     def get() -> dict:
         return {
-            'request_id': _request_id_var.get(),
-            'user_id': _user_id_var.get(),
-            'tenant_id': _tenant_id_var.get(),
+            "request_id": _request_id_var.get(),
+            "user_id": _user_id_var.get(),
+            "tenant_id": _tenant_id_var.get(),
         }
 
     @staticmethod
@@ -45,15 +43,11 @@ class RequestContext:
 
     @staticmethod
     @contextmanager
-    def ctx(request_id: str | None = None,
-            user_id: int | None = None,
-            tenant_id: int | None = None):
+    def ctx(request_id: str | None = None, user_id: int | None = None, tenant_id: int | None = None):
         """Context manager that saves context, sets new values, restores on exit."""
         old = RequestContext.get()
         try:
-            RequestContext.set(
-                request_id=request_id, user_id=user_id, tenant_id=tenant_id
-            )
+            RequestContext.set(request_id=request_id, user_id=user_id, tenant_id=tenant_id)
             yield
         finally:
             RequestContext.set(**old)
@@ -61,26 +55,27 @@ class RequestContext:
 
 # ---- JSON formatter for structured file logs ----
 
+
 class JsonFormatter(logging.Formatter):
     def format(self, record):
         ctx = RequestContext.get()
         entry = {
-            'timestamp': datetime.now(UTC).isoformat(),
-            'level': record.levelname,
-            'logger': record.name,
-            'message': record.getMessage(),
-            'module': record.module,
-            'function': record.funcName,
-            'line': record.lineno,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
         }
-        if ctx['request_id']:
-            entry['request_id'] = ctx['request_id']
-        if ctx['user_id']:
-            entry['user_id'] = ctx['user_id']
-        if ctx['tenant_id']:
-            entry['tenant_id'] = ctx['tenant_id']
+        if ctx["request_id"]:
+            entry["request_id"] = ctx["request_id"]
+        if ctx["user_id"]:
+            entry["user_id"] = ctx["user_id"]
+        if ctx["tenant_id"]:
+            entry["tenant_id"] = ctx["tenant_id"]
         if record.exc_info and record.exc_info[1]:
-            entry['exception'] = str(record.exc_info[1])
+            entry["exception"] = str(record.exc_info[1])
         return json.dumps(entry, ensure_ascii=False)
 
 
@@ -118,22 +113,18 @@ def setup_logging(log_file=None):
             log_file,
             maxBytes=log_max_bytes,
             backupCount=log_backup_count,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         file_handler.setLevel(level)
-        if log_format == 'json':
+        if log_format == "json":
             file_handler.setFormatter(JsonFormatter())
         else:
-            file_handler.setFormatter(logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            ))
+            file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 
         # Console handler — human-readable
         console_handler = logging.StreamHandler()
         console_handler.setLevel(level)
-        console_handler.setFormatter(logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        ))
+        console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)

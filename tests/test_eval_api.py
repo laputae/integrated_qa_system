@@ -1,4 +1,5 @@
 """评估自动化管道 — Config, API, Health, and Dataset tests"""
+
 import json
 import os
 from unittest.mock import MagicMock
@@ -9,6 +10,7 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 class TestEvalConfig:
     def test_config_loads_eval_section(self):
         from base.config import Config
+
         config = Config()
         assert hasattr(config, "EVAL_EMBEDDING_MODEL")
         assert hasattr(config, "EVAL_INTERVAL_SECONDS")
@@ -19,6 +21,7 @@ class TestEvalConfig:
 
     def test_config_eval_defaults(self):
         from base.config import Config
+
         config = Config()
         assert config.EVAL_INTERVAL_SECONDS == 21600
         assert config.EVAL_REGRESSION_FAITHFULNESS_THRESHOLD == 0.7
@@ -28,12 +31,14 @@ class TestEvalConfig:
 
     def test_config_eval_embedding(self):
         from base.config import Config
+
         config = Config()
         assert config.EVAL_EMBEDDING_MODEL == "mxbai-embed-large"
         assert config.EVAL_EMBEDDING_BASE_URL == "http://localhost:11434"
 
     def test_config_eval_llm_fallback(self):
         from base.config import Config
+
         config = Config()
         if not config.EVAL_LLM_MODEL:
             assert config.LLM_MODEL is not None
@@ -68,12 +73,14 @@ class TestEvalAPI:
 class TestEvalHealthCheck:
     def test_check_eval_quality_not_initialized(self):
         from base.health import HealthChecker
+
         checker = HealthChecker(MagicMock(), MagicMock())
         result = checker.check_eval_quality(None)
         assert result.status.value == "unknown"
 
     def test_check_eval_quality_initialized(self):
         from base.health import HealthChecker
+
         config = MagicMock()
         config.EVAL_QUALITY_CRITICAL_THRESHOLD = 0.4
         config.EVAL_QUALITY_WARNING_THRESHOLD = 0.6
@@ -88,6 +95,7 @@ class TestEvalHealthCheck:
 
     def test_check_eval_quality_critical(self):
         from base.health import HealthChecker
+
         config = MagicMock()
         config.EVAL_QUALITY_CRITICAL_THRESHOLD = 0.4
         config.EVAL_QUALITY_WARNING_THRESHOLD = 0.6
@@ -102,6 +110,7 @@ class TestEvalHealthCheck:
 
     def test_check_eval_quality_exception(self):
         from base.health import HealthChecker
+
         eval_service = MagicMock()
         eval_service.get_quality_status.side_effect = RuntimeError("Boom")
         checker = HealthChecker(MagicMock(), MagicMock())
@@ -112,6 +121,7 @@ class TestEvalHealthCheck:
 class TestDatasetLoading:
     def test_default_dataset_exists(self):
         from base.config import Config
+
         config = Config()
         path = config.EVAL_DEFAULT_DATASET_PATH
         full_path = os.path.join(_project_root, path)
@@ -126,6 +136,7 @@ class TestDatasetLoading:
 
     def test_load_default_dataset(self):
         from rag_qa.eval.eval_service import EvalService
+
         config = MagicMock()
         config.EVAL_DEFAULT_DATASET_PATH = os.path.join(
             _project_root, "rag_qa", "rag_assesment", "rag_evaluate_data.json"

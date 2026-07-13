@@ -10,9 +10,7 @@ class EvalResult(Base):
     __tablename__ = "eval_results"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    run_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("eval_runs.id"), nullable=False, index=True
-    )
+    run_id: Mapped[int] = mapped_column(Integer, ForeignKey("eval_runs.id"), nullable=False, index=True)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     ground_truth: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -26,6 +24,4 @@ class EvalResult(Base):
         DateTime, default=func.now(), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (
-        Index("idx_eval_result_run", "run_id"),
-    )
+    __table_args__ = (Index("idx_eval_result_run", "run_id"),)

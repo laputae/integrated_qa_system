@@ -1,4 +1,3 @@
-
 from db_models.audit_log import AuditLog
 
 
@@ -6,11 +5,15 @@ class AuditRepository:
     def __init__(self, session_factory):
         self.session_factory = session_factory
 
-    def insert(self, user_id: int | None, event_type: str,
-               tenant_id: int | None = None,
-               ip_address: str | None = None,
-               user_agent: str | None = None,
-               detail: str | None = None):
+    def insert(
+        self,
+        user_id: int | None,
+        event_type: str,
+        tenant_id: int | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        detail: str | None = None,
+    ):
         with self.session_factory() as session:
             entry = AuditLog(
                 user_id=user_id,

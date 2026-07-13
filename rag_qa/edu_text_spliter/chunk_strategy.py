@@ -1,7 +1,6 @@
 """Chunking strategy factory — returns the correct LangChain-compatible text splitter
 for a given strategy name."""
 
-
 from langchain_text_splitters import MarkdownTextSplitter, TextSplitter
 
 from .edu_chinese_recursive_text_splitter import ChineseRecursiveTextSplitter

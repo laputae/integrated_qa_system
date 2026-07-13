@@ -37,8 +37,6 @@ class OCRPDFLoader(BaseLoader):
         line = self.pdf2text()
         yield Document(page_content=line, metadata={"source": self.file_path})
 
-
-
     def pdf2text(self):
         ocr = get_ocr()
         # 打开pdf文件
@@ -66,8 +64,9 @@ class OCRPDFLoader(BaseLoader):
                     # 图像在页面上的位置和尺寸。
                     bbox = img["bbox"]
                     # 检查图片尺寸是否超过设定的阈值
-                    if ((bbox[2] - bbox[0]) / (page.rect.width) < PDF_OCR_THRESHOLD[0]
-                            or (bbox[3] - bbox[1]) / (page.rect.height) < PDF_OCR_THRESHOLD[1]):
+                    if (bbox[2] - bbox[0]) / (page.rect.width) < PDF_OCR_THRESHOLD[0] or (bbox[3] - bbox[1]) / (
+                        page.rect.height
+                    ) < PDF_OCR_THRESHOLD[1]:
                         continue
                     pix = fitz.Pixmap(doc, xref)
                     # print(f'page.rotation-->{page.rotation}')
@@ -91,11 +90,11 @@ class OCRPDFLoader(BaseLoader):
         return resp
 
     def rotate_img(self, img, angle):
-        '''
+        """
         img   --image
         angle --rotation angle
         return--rotated img
-        '''
+        """
 
         h, w = img.shape[:2]
         rotate_center = (w / 2, h / 2)
@@ -114,8 +113,11 @@ class OCRPDFLoader(BaseLoader):
         rotated_img = cv2.warpAffine(img, M, (new_w, new_h))
         return rotated_img
 
-if __name__ == '__main__':
-    pdf_loader = OCRPDFLoader(file_path="/Users/ligang/Desktop/EduRAG课堂资料/codes/integrated_qa_system/rag_qa/samples/ocr_03.pdf")
+
+if __name__ == "__main__":
+    pdf_loader = OCRPDFLoader(
+        file_path="/Users/ligang/Desktop/EduRAG课堂资料/codes/integrated_qa_system/rag_qa/samples/ocr_03.pdf"
+    )
     doc = pdf_loader.load()
 
     print(type(doc))

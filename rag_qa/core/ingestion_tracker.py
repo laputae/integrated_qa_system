@@ -6,6 +6,7 @@ Tracks which files have been ingested, their content hashes, and processing stat
 Enables incremental document processing by categorizing files as:
   NEW / MODIFIED / UNCHANGED / DELETED
 """
+
 import hashlib
 import os
 import sqlite3
@@ -44,14 +45,8 @@ class IngestionTracker:
                 updated_at  TEXT NOT NULL
             )
         """)
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_ingested_status "
-            "ON ingested_files(status)"
-        )
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_ingested_doc_id "
-            "ON ingested_files(doc_id)"
-        )
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_ingested_status ON ingested_files(status)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_ingested_doc_id ON ingested_files(doc_id)")
         self.conn.commit()
 
     @staticmethod
@@ -127,11 +122,13 @@ class IngestionTracker:
         for record in self._get_all_active():
             norm_path = os.path.normpath(record["file_path"]).lower()
             if norm_path not in seen_paths:
-                result["deleted"].append({
-                    "file_path": record["file_path"],
-                    "doc_id": record["doc_id"],
-                    "file_name": record["file_name"],
-                })
+                result["deleted"].append(
+                    {
+                        "file_path": record["file_path"],
+                        "doc_id": record["doc_id"],
+                        "file_name": record["file_name"],
+                    }
+                )
 
         logger.info(
             f"扫描结果: {len(result['new'])} 新增, "
@@ -168,8 +165,7 @@ class IngestionTracker:
                 status       = 'active',
                 updated_at   = excluded.updated_at
             """,
-            (file_path, file_name, content_hash, doc_id,
-             file_size, file_mtime, chunk_count, now, now),
+            (file_path, file_name, content_hash, doc_id, file_size, file_mtime, chunk_count, now, now),
         )
         self.conn.commit()
 
@@ -177,8 +173,7 @@ class IngestionTracker:
         """Mark a document as deleted (soft-delete, sets status='deleted')."""
         now = datetime.now().isoformat()
         self.conn.execute(
-            "UPDATE ingested_files SET status='deleted', chunk_count=0, "
-            "updated_at=? WHERE doc_id=?",
+            "UPDATE ingested_files SET status='deleted', chunk_count=0, updated_at=? WHERE doc_id=?",
             (now, doc_id),
         )
         self.conn.commit()
@@ -191,8 +186,7 @@ class IngestionTracker:
     def get_chunk_count(self, doc_id: str) -> int:
         """Get the number of chunks previously stored for a doc_id."""
         cursor = self.conn.execute(
-            "SELECT chunk_count FROM ingested_files "
-            "WHERE doc_id=? AND status='active'",
+            "SELECT chunk_count FROM ingested_files WHERE doc_id=? AND status='active'",
             (doc_id,),
         )
         row = cursor.fetchone()
@@ -208,8 +202,7 @@ class IngestionTracker:
         """Look up a file by path, returning a dict or None."""
         norm_path = os.path.normpath(file_path).lower()
         cursor = self.conn.execute(
-            "SELECT content_hash, doc_id, file_size, file_mtime, status "
-            "FROM ingested_files WHERE file_path=?",
+            "SELECT content_hash, doc_id, file_size, file_mtime, status FROM ingested_files WHERE file_path=?",
             (norm_path,),
         )
         row = cursor.fetchone()
@@ -217,8 +210,5 @@ class IngestionTracker:
 
     def _get_all_active(self) -> list[dict]:
         """Get all active (non-deleted) records."""
-        cursor = self.conn.execute(
-            "SELECT file_path, doc_id, file_name "
-            "FROM ingested_files WHERE status='active'"
-        )
+        cursor = self.conn.execute("SELECT file_path, doc_id, file_name FROM ingested_files WHERE status='active'")
         return [dict(row) for row in cursor.fetchall()]

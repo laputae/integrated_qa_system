@@ -30,6 +30,7 @@ class IntegratedQASystem:
 
         # ---- Phase 1: Core infrastructure (must succeed) ----
         from db_models.base import SessionLocal, engine
+
         self.engine = engine
         self.SessionLocal = SessionLocal
         self.executor = ThreadPoolExecutor(max_workers=self.config.THREAD_POOL_WORKERS)
@@ -115,7 +116,9 @@ class IntegratedQASystem:
             self.logger.warning("RAGSystem 初始化跳过: VectorStore 或 LLM 不可用")
             return None
         try:
-            rag = RAGSystem(self.vector_store, self.call_dashscope, redis_client=self.redis_client, llm_client=self.llm_client)
+            rag = RAGSystem(
+                self.vector_store, self.call_dashscope, redis_client=self.redis_client, llm_client=self.llm_client
+            )
             self.logger.info("RAGSystem 初始化成功")
             return rag
         except Exception as e:
@@ -129,9 +132,11 @@ class IntegratedQASystem:
         try:
             from rag_qa.eval.eval_service import EvalService
             from repositories.eval_repo import EvalRepository
+
             repo = EvalRepository(self.SessionLocal)
             service = EvalService(
-                config=self.config, repo=repo,
+                config=self.config,
+                repo=repo,
                 rag_system=self.rag_system,
                 llm_client=self.llm_client,
                 vector_store=self.vector_store,
@@ -146,6 +151,7 @@ class IntegratedQASystem:
     def _init_db_schema(self):
         try:
             from db_models.base import Base
+
             Base.metadata.create_all(self.engine)
             self.logger.info("数据库 Schema 创建/验证完成")
         except Exception as e:
@@ -155,28 +161,21 @@ class IntegratedQASystem:
 
     def _register_health_checks(self):
         from base.health import HealthChecker
+
         checker = HealthChecker(self.config, self.logger)
 
-        self.health.register_component("mysql",
-            lambda: checker.check_mysql(self.engine))
-        self.health.register_component("redis",
-            lambda: checker.check_redis(self.redis_client))
-        self.health.register_component("milvus",
-            lambda: checker.check_milvus(self.vector_store))
-        self.health.register_component("llm",
-            lambda: checker.check_llm(self.llm_client, self.config))
-        self.health.register_component("embedding",
-            lambda: checker.check_embedding(self.vector_store))
-        self.health.register_component("reranker",
-            lambda: checker.check_reranker(self.vector_store))
-        self.health.register_component("classifier",
-            lambda: checker.check_classifier(self.rag_system))
-        self.health.register_component("llm_reranker",
-            lambda: checker.check_llm_reranker(self.config))
-        self.health.register_component("hallucination_guard",
-            lambda: checker.check_hallucination_guard(self.rag_system))
-        self.health.register_component("eval_quality",
-            lambda: checker.check_eval_quality(self.eval_service))
+        self.health.register_component("mysql", lambda: checker.check_mysql(self.engine))
+        self.health.register_component("redis", lambda: checker.check_redis(self.redis_client))
+        self.health.register_component("milvus", lambda: checker.check_milvus(self.vector_store))
+        self.health.register_component("llm", lambda: checker.check_llm(self.llm_client, self.config))
+        self.health.register_component("embedding", lambda: checker.check_embedding(self.vector_store))
+        self.health.register_component("reranker", lambda: checker.check_reranker(self.vector_store))
+        self.health.register_component("classifier", lambda: checker.check_classifier(self.rag_system))
+        self.health.register_component("llm_reranker", lambda: checker.check_llm_reranker(self.config))
+        self.health.register_component(
+            "hallucination_guard", lambda: checker.check_hallucination_guard(self.rag_system)
+        )
+        self.health.register_component("eval_quality", lambda: checker.check_eval_quality(self.eval_service))
 
     # ========== LLM Call ==========
 
@@ -206,14 +205,18 @@ class IntegratedQASystem:
                         yield chunk.choices[0].delta.content
                 qa_llm_call_total.labels(status="success").inc()
                 return
-            except (APITimeoutError, APIConnectionError,
-                    InternalServerError, RateLimitError,
-                    ConnectionError, TimeoutError) as e:
+            except (
+                APITimeoutError,
+                APIConnectionError,
+                InternalServerError,
+                RateLimitError,
+                ConnectionError,
+                TimeoutError,
+            ) as e:
                 if attempt < max_retries - 1:
-                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    delay = min(base_delay * (2**attempt), max_delay)
                     self.logger.warning(
-                        f"LLM调用失败 (attempt {attempt+1}/{max_retries}): {e}，"
-                        f"{delay:.1f}s 后重试..."
+                        f"LLM调用失败 (attempt {attempt + 1}/{max_retries}): {e}，{delay:.1f}s 后重试..."
                     )
                     time.sleep(delay)
                 else:
@@ -230,6 +233,7 @@ class IntegratedQASystem:
 
     def _get_conversation_repo(self):
         from repositories.conversation_repo import ConversationRepository
+
         return ConversationRepository(self.SessionLocal)
 
     def _fetch_recent_history(self, session_id: str, user_id: int, tenant_id: int):
@@ -240,16 +244,14 @@ class IntegratedQASystem:
         repo = self._get_conversation_repo()
         return repo.get_session_history(session_id, user_id, tenant_id)
 
-    def update_session_history(self, session_id: str, user_id: int, tenant_id: int,
-                                question: str, answer: str) -> list:
+    def update_session_history(self, session_id: str, user_id: int, tenant_id: int, question: str, answer: str) -> list:
         repo = self._get_conversation_repo()
         repo.insert(session_id, user_id, tenant_id, question, answer)
         repo.prune_old_records(session_id, user_id, tenant_id, keep=5)
         self.logger.info(f"会话 {session_id} 历史更新成功")
         return repo.get_recent_history(session_id, user_id, tenant_id, limit=5)
 
-    def clear_session_history(self, session_id: str, user_id: int = 0,
-                               tenant_id: int = 0) -> bool:
+    def clear_session_history(self, session_id: str, user_id: int = 0, tenant_id: int = 0) -> bool:
         repo = self._get_conversation_repo()
         return repo.soft_delete_sessions([session_id], user_id, tenant_id) > 0
 
@@ -275,17 +277,15 @@ class IntegratedQASystem:
         - ('full_rag', None)     — Full RAG pipeline with LLM streaming
         """
         if answer:
-            return ('bm25_hit', answer)
+            return ("bm25_hit", answer)
         if not (need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS):
-            msg = (f"RAG 不可用 (降级等级: {level.name})"
-                   if level >= DegradationLevel.LEVEL2_NO_MILVUS else "未找到答案")
-            return ('not_found', msg)
+            msg = f"RAG 不可用 (降级等级: {level.name})" if level >= DegradationLevel.LEVEL2_NO_MILVUS else "未找到答案"
+            return ("not_found", msg)
         if level == DegradationLevel.LEVEL3_NO_LLM:
-            return ('degraded', None)
-        return ('full_rag', None)
+            return ("degraded", None)
+        return ("full_rag", None)
 
-    def _record_query_metrics(self, level, source, session_id, user_id,
-                              tenant_id, query, answer, start_time):
+    def _record_query_metrics(self, level, source, session_id, user_id, tenant_id, query, answer, start_time):
         """Record Prometheus metrics and update session history."""
         if session_id and answer:
             self.update_session_history(session_id, user_id, tenant_id, query, answer)
@@ -303,8 +303,9 @@ class IntegratedQASystem:
 
     # ========== Main Query Pipeline ==========
 
-    def query(self, query, user_id: int = 0, tenant_id: int = 0,
-              source_filter=None, session_id=None, external_context=None):
+    def query(
+        self, query, user_id: int = 0, tenant_id: int = 0, source_filter=None, session_id=None, external_context=None
+    ):
         start_time = time.time()
         level = self.health.get_degradation_level()
         self.logger.info(
@@ -321,21 +322,23 @@ class IntegratedQASystem:
         answer, need_rag = self._bm25_phase(query)
         action, payload = self._resolve_pipeline_action(level, answer, need_rag)
 
-        if action == 'bm25_hit':
+        if action == "bm25_hit":
             self.logger.info(f"MySQL答案: {payload}")
             qa_bm25_hit_total.inc()
             self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, payload, start_time)
             yield payload, True
             return
 
-        if action == 'not_found':
+        if action == "not_found":
             yield self._yield_not_found(level, source_filter, start_time, payload), True
             return
 
-        if action == 'degraded':
+        if action == "degraded":
             self.logger.info("LLM 降级中，返回检索到的原始上下文")
             collected_answer = self._degraded_rag_retrieve(query, source_filter)
-            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time)
+            self._record_query_metrics(
+                level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time
+            )
             yield collected_answer, True
             return
 
@@ -343,20 +346,28 @@ class IntegratedQASystem:
         self.logger.info("无可靠MySQL答案，回退到RAG")
         collected_answer = ""
         for token in self.rag_system.generate_answer(
-            query, source_filter=source_filter, history=history,
-            external_context=external_context
+            query, source_filter=source_filter, history=history, external_context=external_context
         ):
             collected_answer += token
             yield token, False
-        self._last_guard_result = getattr(self.rag_system, '_last_guard_result', None)
-        self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time)
+        self._last_guard_result = getattr(self.rag_system, "_last_guard_result", None)
+        self._record_query_metrics(
+            level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time
+        )
         yield "", True
 
     # ========== Async Query Pipeline (asyncio.Semaphore + to_thread) ==========
 
-    async def aquery(self, query, semaphore: asyncio.Semaphore,
-                     user_id: int = 0, tenant_id: int = 0,
-                     source_filter=None, session_id=None, external_context=None):
+    async def aquery(
+        self,
+        query,
+        semaphore: asyncio.Semaphore,
+        user_id: int = 0,
+        tenant_id: int = 0,
+        source_filter=None,
+        session_id=None,
+        external_context=None,
+    ):
         """Async variant of query() for high-concurrency WebSocket/SSE endpoints."""
         start_time = time.time()
         level = self.health.get_degradation_level()
@@ -371,33 +382,35 @@ class IntegratedQASystem:
             return
 
         loop = asyncio.get_running_loop()
-        history = await loop.run_in_executor(
-            self.executor, self.get_session_history, session_id, user_id, tenant_id
-        ) if session_id else []
-
-        answer, need_rag = await loop.run_in_executor(
-            self.executor, self._bm25_phase, query
+        history = (
+            await loop.run_in_executor(self.executor, self.get_session_history, session_id, user_id, tenant_id)
+            if session_id
+            else []
         )
+
+        answer, need_rag = await loop.run_in_executor(self.executor, self._bm25_phase, query)
         action, payload = self._resolve_pipeline_action(level, answer, need_rag)
 
-        if action == 'bm25_hit':
+        if action == "bm25_hit":
             self.logger.info(f"[async] MySQL答案: {payload}")
             qa_bm25_hit_total.inc()
             self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, payload, start_time)
             yield payload, True
             return
 
-        if action == 'not_found':
+        if action == "not_found":
             yield self._yield_not_found(level, source_filter, start_time, payload), True
             return
 
-        if action == 'degraded':
+        if action == "degraded":
             self.logger.info("[async] LLM 降级中，返回检索到的原始上下文")
             loop = asyncio.get_running_loop()
             collected_answer = await loop.run_in_executor(
                 self.executor, self._degraded_rag_retrieve, query, source_filter
             )
-            self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time)
+            self._record_query_metrics(
+                level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time
+            )
             yield collected_answer, True
             return
 
@@ -406,18 +419,16 @@ class IntegratedQASystem:
         queue: asyncio.Queue = asyncio.Queue()
 
         async with semaphore:
+
             def _run_rag():
                 try:
                     collected = ""
                     for token in self.rag_system.generate_answer(
-                        query, source_filter=source_filter, history=history,
-                        external_context=external_context
+                        query, source_filter=source_filter, history=history, external_context=external_context
                     ):
                         collected += token
                         queue.put_nowait(("token", token))
-                    self._last_guard_result = getattr(
-                        self.rag_system, '_last_guard_result', None
-                    )
+                    self._last_guard_result = getattr(self.rag_system, "_last_guard_result", None)
                     queue.put_nowait(("done", collected))
                 except Exception as e:
                     self.logger.error(f"[async] RAG 线程异常: {e}")
@@ -439,28 +450,23 @@ class IntegratedQASystem:
                     yield f"抱歉，处理问题时出错，请联系人工客服：{self.config.CUSTOMER_SERVICE_PHONE}", True
                     return
 
-        self._record_query_metrics(level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time)
+        self._record_query_metrics(
+            level, source_filter, session_id, user_id, tenant_id, query, collected_answer, start_time
+        )
         yield "", True
 
     def _degraded_rag_retrieve(self, query, source_filter=None) -> str:
         """Level 3 degraded retrieval: return raw context without LLM summarization."""
         try:
             # 降级路径不调 LLM 做策略选择，直接检索
-            docs = self.rag_system.retrieve_and_merge(
-                query, source_filter=source_filter, strategy="direct"
-            )
+            docs = self.rag_system.retrieve_and_merge(query, source_filter=source_filter, strategy="direct")
             # 无 LLM 检索重试链：放宽 source_filter 再试一次
             if not docs and source_filter:
                 self.logger.info(f"直接检索无结果，去掉 source_filter 重试 (查询: '{query}')")
-                docs = self.rag_system.retrieve_and_merge(
-                    query, source_filter=None, strategy="direct"
-                )
+                docs = self.rag_system.retrieve_and_merge(query, source_filter=None, strategy="direct")
             if docs:
                 context = "\n\n".join([doc.page_content for doc in docs])
-                return (
-                    "【系统提示】大语言模型暂不可用，以下为检索到的相关资料：\n\n"
-                    f"{context}"
-                )
+                return f"【系统提示】大语言模型暂不可用，以下为检索到的相关资料：\n\n{context}"
             return "未找到相关答案"
         except Exception as e:
             self.logger.error(f"降级检索失败: {e}")
