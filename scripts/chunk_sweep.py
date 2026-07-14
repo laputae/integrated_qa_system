@@ -16,14 +16,11 @@ import sys
 import uuid
 from datetime import datetime
 
-# ---- 路径推导 ----
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(_script_dir)
-sys.path.insert(0, _project_root)
+from base import Config, logger
+from base.chunk_config import ChunkConfigManager
+from scripts.chunk_sweep_report import SWEEP_CONFIGS_FAST, SWEEP_CONFIGS_FULL, print_report
 
-from base import Config, logger  # noqa: E402
-from base.chunk_config import ChunkConfigManager  # noqa: E402
-from scripts.chunk_sweep_report import SWEEP_CONFIGS_FAST, SWEEP_CONFIGS_FULL, print_report  # noqa: E402
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def build_chunk_snapshot(label, parent, child, overlap, strategy):

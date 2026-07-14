@@ -81,7 +81,7 @@
 ```
 integrated_qa_system/
 ├── base/                          # 基础设施
-│   ├── __init__.py                # 包初始化 + sys.path 配置
+│   ├── __init__.py                # 包初始化（重导出 Config, RequestContext, logger）
 │   ├── config.py                  # 统一配置管理（单例，仅读取 config.ini）
 │   ├── logger.py                  # 结构化 JSON 日志 + RequestContext（contextvars 异步安全）
 │   ├── health.py                  # 健康编排层（SystemHealth + 降级等级 + 自动恢复）
@@ -134,7 +134,6 @@ integrated_qa_system/
 │
 ├── rag_qa/                        # Tier 2: RAG 语义检索
 │   ├── __init__.py
-│   ├── rag_main.py                # RAG CLI（数据预处理 / 交互查询）
 │   ├── core/
 │   │   ├── rag_system.py          # RAGSystem（流式 + 对话历史 + 上下文质量检查 + 兜底回复 + 流水线决策）
 │   │   ├── vector_store.py        # Milvus 向量库 + BGE-M3 混合检索 + 重排序 + 分数阈值过滤
@@ -615,7 +614,7 @@ with SessionLocal() as session:
 
 **文档目录结构**：
 
-处理脚本会遍历 `config.ini` 中 `valid_sources` 配置的每个学科（如 `ai`、`java`、`test`、`ops`、`bigdata`），在 `--data-dir` 指定的目录下查找 `<source>_data` 子目录。默认目录结构如下：
+处理脚本会遍历 `config.ini` 中 `valid_sources` 配置的每个学科（如 `ai`、`java`、`test`、`ops`、`bigdata`），在数据目录下查找 `<source>_data` 子目录。默认目录结构如下：
 
 ```
 rag_qa/data/
@@ -630,37 +629,66 @@ rag_qa/data/
 └── bigdata_data/     # 大数据学科文档
 ```
 
-**方式一：传统全量构建**（使用 pymilvus 传统管线）：
+**统一使用增量构建管线**（LlamaIndex + SQLite 哈希追踪）：
+
+自 v0.2 起，向量库构建统一使用 `LlamaIndexProcessor.incremental_process_and_index()` 增量管线，不再提供传统 pymilvus 全量构建方式。首次运行时自动执行全量索引，后续运行自动跳过未修改文件。
+
+> **前置条件**：运行前需确保 ① Milvus 服务已启动 ② BGE-M3 模型已下载到 `rag_qa/models/bge-m3/` ③ `config.ini` 中 `[milvus]` 连接信息正确 ④ 目标目录下有文档文件。
 
 ```bash
-uv run python rag_qa/rag_main.py --data-processing --data-dir rag_qa/data
+# 处理单个学科目录（首次=全量索引，后续=仅处理变更文件）
+uv run python -m rag_qa.core.llamaindex_processor rag_qa/data/ai_data
+
+# 自动发现 rag_qa/data/ 下所有 *_data 目录并批量处理
+uv run python -m rag_qa.core.llamaindex_processor --all
+
+# 指定多个目录批量处理
+uv run python -m rag_qa.core.llamaindex_processor rag_qa/data/ai_data rag_qa/data/java_data
+
+# 自定义 chunk 参数
+uv run python -m rag_qa.core.llamaindex_processor rag_qa/data/ai_data --child-chunk-size 400 --chunk-overlap 80
 ```
 
-此命令将：
-- 加载各学科文档（MD / PDF / DOCX / PPTX / 图片）
-- 通过 OCR 提取图片中的文字
-- 执行父子块切分（父块 1200 字符，子块 300 字符）
-- 子块写入 Milvus 向量库（BGE-M3 稠密 + 稀疏混合嵌入）
+> **PowerShell 用户**：如需按学科循环处理，可使用 ForEach-Object：
+> ```powershell
+> @("ai", "java", "test", "ops", "bigdata") | ForEach-Object {
+>     uv run python -m rag_qa.core.llamaindex_processor "rag_qa/data/$_data"
+> }
+> ```
 
-**方式二：增量构建**（使用 LlamaIndex + SQLite 哈希追踪，推荐重复使用）：
-
-```python
-from rag_qa.core.llamaindex_processor import incremental_process_and_index
-
-# 首次运行 — 全部文件标记为 NEW，执行全量索引
-result = incremental_process_and_index("rag_qa/data/ai_data")
-# => {"new": 50, "modified": 0, "deleted": 0, "unchanged": 0, "total_chunks": 300}
-
-# 第二次运行 — 未修改文件标记为 UNCHANGED，跳过处理
-result = incremental_process_and_index("rag_qa/data/ai_data")
-# => {"new": 0, "modified": 0, "deleted": 0, "unchanged": 50, "total_chunks": 0}
+输出示例：
 ```
+扫描: 50 新增, 0 修改, 0 已删除, 0 未变
+处理完成: {'new': 50, 'modified': 0, 'deleted': 0, 'unchanged': 0, 'total_chunks': 300}
+```
+
+> **编程调用**：如果需要在 Python 脚本中集成，可直接导入使用：
+> ```python
+> # 方式一：直接从 llamaindex_processor 导入
+> from rag_qa.core.llamaindex_processor import (
+>     incremental_process_and_index,
+>     batch_process_directories,
+>     discover_data_dirs,
+> )
+>
+> # 处理单个目录
+> result = incremental_process_and_index("rag_qa/data/ai_data")
+>
+> # 批量处理（自动发现所有学科目录）
+> dirs = discover_data_dirs()
+> results = batch_process_directories(dirs)
+>
+> # 方式二：通过 document_processor 外观层导入（兼容旧代码）
+> from rag_qa.core.document_processor import incremental_process_and_index
+> ```
 
 增量管线自动分类文件为 NEW / MODIFIED / UNCHANGED / DELETED：
-- **NEW** → OCR + 切分 + 插入新向量
-- **MODIFIED** → 先删除旧向量（通过 `ref_doc_id`），再重新处理
-- **UNCHANGED** → 直接跳过，零开销
+- **NEW** → OCR 加载 → 文本清洗 → 质量评估 → 父子块切分 → BGE-M3 混合嵌入 → 写入 Milvus
+- **MODIFIED** → 先通过 `ref_doc_id` 删除旧向量，再重新处理
+- **UNCHANGED** → 直接跳过，零计算开销
 - **DELETED** → 从 Milvus 中删除对应向量
+
+推荐使用 `--all` 标志自动发现并批量处理所有 `*_data` 目录，也可指定单个或多个目录分别执行。
 
 ## 首次启动
 
@@ -711,8 +739,8 @@ uv run python scripts/seed_default_tenant.py
 # 6. 导入 BM25 问答数据
 uv run python scripts/import_jpkb_csv.py
 
-# 7. 构建 RAG 向量库（参考上方「构建 RAG 向量库」）
-uv run python rag_qa/rag_main.py --data-processing
+# 7. 构建 RAG 向量库（参考上方「构建 RAG 向量库」章节）
+uv run python -m rag_qa.core.llamaindex_processor rag_qa/data/ai_data
 ```
 
 ## 启动服务
@@ -761,7 +789,6 @@ API 端点：
 ```bash
 uv run python main.py               # 集成问答（BM25 + RAG + 对话历史）
 uv run python mysql_qa/main.py     # MySQL BM25 独立问答
-uv run python rag_qa/rag_main.py   # RAG 独立问答
 ```
 
 ## 核心技术说明

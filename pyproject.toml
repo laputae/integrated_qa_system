@@ -54,6 +54,7 @@ dependencies = [
     "prometheus-fastapi-instrumentator>=7.1.0",
     "jose>=1.0.0",
     "paddlepaddle>=3.1.1",
+    "llama-index-llms-openai>=0.7.9",
 ]
 
 
@@ -72,3 +73,23 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = [
+    "base",
+    "base.*",
+    "db_models",
+    "gateway",
+    "mysql_qa",
+    "mysql_qa.*",
+    "rag_qa",
+    "rag_qa.*",
+    "repositories",
+    "routers",
+    "routers.*",
+    "scripts",
+]

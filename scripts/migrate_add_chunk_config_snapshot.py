@@ -1,9 +1,5 @@
 """Add chunk_config_snapshot column to eval_runs table."""
 
-import sys
-
-sys.path.insert(0, ".")
-
 from sqlalchemy import text
 
 from db_models.base import engine

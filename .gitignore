@@ -17,6 +17,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
 
 # ========== 机器学习模型文件 ==========
 *.safetensors
@@ -33,9 +34,13 @@ Thumbs.db
 .env
 .env.local
 .claude/
+.rag_qa/data/
 CLAUDE.md
 config.ini
 
+
+# ========== RAG 数据目录 ==========
+rag_qa/data/
 
 # ========== RAG使用的文档 ==========
 *.docx

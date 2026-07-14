@@ -1,9 +1,5 @@
 """Add is_deleted column to conversations table."""
 
-import sys
-
-sys.path.insert(0, ".")
-
 from sqlalchemy import text
 
 from db_models.base import engine

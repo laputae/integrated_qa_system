@@ -4,11 +4,6 @@ Run this script before starting the app after upgrading to multi-tenant schema:
     uv run scripts/seed_default_tenant.py
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from sqlalchemy import text, update
 
 from db_models.base import Base, SessionLocal, engine
