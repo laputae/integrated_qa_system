@@ -34,7 +34,6 @@ Thumbs.db
 .env
 .env.local
 .claude/
-.rag_qa/data/
 CLAUDE.md
 config.ini
 
@@ -48,4 +47,3 @@ rag_qa/data/
 *.txt
 *.pptx
 *.pdf
-人工智能就业课课程大纲.md

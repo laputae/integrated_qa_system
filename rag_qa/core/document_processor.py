@@ -1,135 +1,94 @@
 """
-文档处理器 - 使用 LlamaIndex 实现
-保持与原有 API 兼容
+文档处理器 — 公开 API 外观层
+
+统一从 llamaindex_processor 导出所有管线函数，保持向后兼容的同时
+提供单一导入入口。
 """
 
 import os
 
-# 导入必要的类型检查
-try:
-    from langchain_core.documents import Document
-except ImportError:
-    Document = None
-
 from .llamaindex_processor import (
-    load_documents_from_directory as llamaindex_load,
-)
-from .llamaindex_processor import (
-    process_documents as llamaindex_process,
+    LlamaIndexProcessor,
+    batch_process_directories,
+    discover_data_dirs,
+    incremental_process_and_index,
+    load_documents_from_directory,
+    process_documents,
 )
 
-# 保持原有全局变量（如果其他模块引用）
-document_loaders = {
-    ".txt": None,
-    ".pdf": None,
-    ".docx": None,
-    ".ppt": None,
-    ".pptx": None,
-    ".jpg": None,
-    ".png": None,
-    ".md": None,
-}
+# ---- 所有公开符号均直接从 llamaindex_processor 导出 ----
+__all__ = [
+    "load_documents_from_directory",
+    "process_documents",
+    "incremental_process_and_index",
+    "batch_process_directories",
+    "discover_data_dirs",
+    "LlamaIndexProcessor",
+    "validate_document_format",
+]
 
 
-def load_documents_from_directory(directory_path):
-    """
-    从目录加载文档（保持原有函数签名）
+def validate_document_format(documents: list) -> dict:
+    """验证文档格式是否符合预期，自动识别原始文档/切分后文档。
 
     Args:
-        directory_path: 文档目录路径
+        documents: 文档列表（原始加载或切分后的均可）
 
     Returns:
-        list[Document]: 加载的文档列表
+        dict: {"valid": bool, "doc_type": "raw"|"chunked"|"unknown",
+               "count": int, "issues": list[str]}
     """
-    return llamaindex_load(directory_path)
+    issues: list[str] = []
 
-
-def process_documents(directory_path, parent_chunk_size=None, child_chunk_size=None, chunk_overlap=None):
-    """
-    处理文档并进行分层切分（保持原有函数签名）
-
-    Args:
-        directory_path: 文档目录路径
-        parent_chunk_size: 父块大小（可选，使用配置默认值）
-        child_chunk_size: 子块大小（可选，使用配置默认值）
-        chunk_overlap: 块重叠大小（可选，使用配置默认值）
-
-    Returns:
-        list[Document]: 子块文档列表
-    """
-    # 参数已在 LlamaIndexProcessor 中通过配置处理
-    return llamaindex_process(directory_path)
-
-
-def validate_document_format(documents: list) -> bool:
-    """
-    验证文档格式是否符合预期
-
-    Args:
-        documents: 文档列表
-
-    Returns:
-        bool: 验证是否通过
-    """
     if not documents:
-        print("[验证] ❌ 文档列表为空")
-        return False
+        issues.append("文档列表为空")
+        return {"valid": False, "doc_type": "unknown", "count": 0, "issues": issues}
 
-    # 检查返回类型
-    if not isinstance(documents, list):
-        print("[验证] ❌ 返回值不是列表类型")
-        return False
-
-    # 检查第一个文档
     first_doc = documents[0]
 
-    # 检查文档类型（兼容 langchain Document）
-    if Document and not isinstance(first_doc, Document):
-        print(f"[验证] ⚠️ 文档类型不是 langchain Document，而是: {type(first_doc)}")
+    # 检查基本属性
+    if not hasattr(first_doc, "page_content"):
+        issues.append("缺少 page_content 属性")
+        return {"valid": False, "doc_type": "unknown", "count": len(documents), "issues": issues}
+    if not hasattr(first_doc, "metadata") or not isinstance(first_doc.metadata, dict):
+        issues.append("metadata 缺失或不是字典类型")
+        return {"valid": False, "doc_type": "unknown", "count": len(documents), "issues": issues}
+
+    metadata = first_doc.metadata
+
+    # 自动识别文档类型：切分后的文档有 parent_id 字段
+    chunk_fields = {"id", "parent_id", "parent_content"}
+    is_chunked = chunk_fields.issubset(metadata.keys())
+    doc_type = "chunked" if is_chunked else "raw"
+
+    # 按文档类型选择必要的元数据字段
+    raw_required = {"source", "file_path"}
+    chunk_required = {"source", "file_path", "timestamp", "id", "parent_id", "parent_content"}
+
+    required = chunk_required if is_chunked else raw_required
+    missing = [f for f in required if f not in metadata]
+    if missing:
+        issues.append(f"缺少元数据字段 ({doc_type} 模式): {missing}")
     else:
-        print("[验证] ✓ 文档类型正确")
+        issues.append(f"元数据字段完整 ({doc_type} 模式)")
 
-    # 检查必要的属性
-    required_attrs = ["page_content", "metadata"]
-    for attr in required_attrs:
-        if not hasattr(first_doc, attr):
-            print(f"[验证] ❌ 缺少必要属性: {attr}")
-            return False
-    print("[验证] ✓ 文档属性完整")
-
-    # 检查元数据字段
-    required_metadata = ["id", "parent_id", "parent_content", "source", "file_path", "timestamp"]
-    missing_fields = []
-
-    if hasattr(first_doc, "metadata") and isinstance(first_doc.metadata, dict):
-        for field in required_metadata:
-            if field not in first_doc.metadata:
-                missing_fields.append(field)
-
-        if missing_fields:
-            print(f"[验证] ⚠️ 缺少元数据字段: {missing_fields}")
-        else:
-            print("[验证] ✓ 元数据字段完整")
-    else:
-        print("[验证] ❌ 元数据不是字典类型")
-        return False
-
-    # 检查内容非空
+    # 内容非空检查
     if first_doc.page_content.strip():
-        print("[验证] ✓ 文档内容非空")
+        issues.append("文档内容非空")
     else:
-        print("[验证] ⚠️ 文档内容为空")
+        issues.append("文档内容为空")
 
-    # 检查 ID 唯一性
-    doc_ids = [doc.metadata.get("id") for doc in documents if hasattr(doc, "metadata")]
-    unique_ids = set(doc_ids)
-    if len(doc_ids) == len(unique_ids):
-        print("[验证] ✓ 文档ID唯一")
-    else:
-        print("[验证] ⚠️ 存在重复的文档ID")
+    # ID 唯一性检查（仅切分后文档有 id 字段）
+    if is_chunked:
+        doc_ids = [doc.metadata.get("id") for doc in documents if hasattr(doc, "metadata")]
+        unique_ids = set(doc_ids)
+        if len(doc_ids) == len(unique_ids):
+            issues.append("文档ID唯一")
+        else:
+            issues.append("存在重复的文档ID")
 
-    print(f"\n[验证] 共处理 {len(documents)} 个文档")
-    return True
+    valid = not any("缺少" in i or "缺失" in i for i in issues)
+    return {"valid": valid, "doc_type": doc_type, "count": len(documents), "issues": issues}
 
 
 # 保持原有入口（如果有脚本直接运行）
@@ -139,9 +98,10 @@ if __name__ == "__main__":
 
     # 1. 加载和处理文档
     print("\n📄 开始处理文档...")
-    directory_path = "D:\\PythonProjects\\integrated_qa_system\\rag_qa\\data\\ai_data"
+    _current_dir = os.path.dirname(os.path.abspath(__file__))
+    _rag_qa_path = os.path.dirname(_current_dir)
+    directory_path = os.path.join(_rag_qa_path, "data", "ai_data")
 
-    # 确保路径存在
     if not os.path.exists(directory_path):
         print(f"❌ 目录不存在: {directory_path}")
         exit(1)
@@ -158,8 +118,15 @@ if __name__ == "__main__":
         print(f"生成子块数量: {len(child_chunks)}")
 
         # 2. 格式验证
-        print("\n--- 格式验证 ---")
-        validate_document_format(child_chunks)
+        print("\n--- 格式验证 (原始文档) ---")
+        raw_result = validate_document_format(docs)
+        for issue in raw_result["issues"]:
+            print(f"  {'✓' if raw_result['valid'] else '⚠️'} {issue}")
+
+        print("\n--- 格式验证 (切分后文档) ---")
+        chunked_result = validate_document_format(child_chunks)
+        for issue in chunked_result["issues"]:
+            print(f"  {'✓' if chunked_result['valid'] else '⚠️'} {issue}")
 
         # 3. 打印第一个文档示例
         if child_chunks:

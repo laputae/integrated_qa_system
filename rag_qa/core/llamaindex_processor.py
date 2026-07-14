@@ -17,8 +17,6 @@ try:
 except ImportError:
     UnstructuredMarkdownLoader = None
 
-from langchain_core.documents import Document as LangchainDocument
-from llama_index.core import Document as LlamaDocument
 from llama_index.core import StorageContext, VectorStoreIndex, load_index_from_storage
 from llama_index.core.schema import (
     NodeRelationship,
@@ -71,7 +69,7 @@ class LlamaIndexProcessor:
     混合模式处理器：
     - load_documents: 使用原始 OCR 加载器
     - process_documents: 使用原始 ChineseRecursiveTextSplitter + MarkdownTextSplitter
-    - add_documents: 使用 LlamaIndex 索引（支持增量更新）
+    - incremental_process_and_index: 使用 LlamaIndex 索引 + SQLite 增量追踪
     """
 
     def __init__(self, tracker_db_path: str | None = None):
@@ -123,43 +121,63 @@ class LlamaIndexProcessor:
                 [], storage_context=storage_context, embed_model=self.embed_model
             )
 
-    def load_documents(self, directory_path):
-        """
-        使用原始 OCR 加载器加载文档（保持与原有代码完全一致）
+    def _load_single_file(self, file_path, source):
+        """加载单个文件：dispatch loader → 清洗文本 → 设置元数据 → 质量评估"""
+        file_extension = os.path.splitext(file_path)[1].lower()
+        loader_class = document_loaders[file_extension]
+        loader = loader_class(file_path, encoding="utf-8") if file_extension == ".txt" else loader_class(file_path)
+        loaded_docs = loader.load()
+        for doc in loaded_docs:
+            doc.page_content = clean_document_text(doc.page_content)
+            doc.metadata["source"] = source
+            doc.metadata["file_path"] = file_path
+            doc.metadata["timestamp"] = datetime.now().isoformat()
+            estimate_document_quality(doc)
+        return loaded_docs
+
+    def _load_files(self, file_paths: list[str]) -> list:
+        """核心文件加载逻辑：遍历路径列表 → 过滤扩展名 → OCR加载 → 清洗 → 质量评估。
+
+        source 元数据按每个文件的父目录名独立推导（修复旧 _load_selected_files
+        只取首个文件 source 的 bug）。
         """
         documents = []
         supported_extensions = document_loaders.keys()
-        source = os.path.basename(directory_path).replace("_data", "")
+
+        for file_path in file_paths:
+            file_extension = os.path.splitext(file_path)[1].lower()
+
+            if file_extension not in supported_extensions:
+                self.logger.warning(f"不支持的文件类型: {file_path}")
+                continue
+
+            parent_dir = os.path.basename(os.path.dirname(file_path))
+            source = parent_dir.replace("_data", "")
+
+            try:
+                documents.extend(self._load_single_file(file_path, source))
+                self.logger.info(f"成功加载文件: {file_path}")
+            except Exception as e:
+                self.logger.error(f"加载文件 {file_path} 失败: {str(e)}")
+
+        return documents
+
+    def load_documents(self, directory_path):
+        """使用原始 OCR 加载器加载目录下所有文档"""
+        supported_extensions = document_loaders.keys()
+        file_paths = []
 
         for root, _, files in os.walk(directory_path):
             for file in files:
                 file_path = os.path.join(root, file)
                 file_extension = os.path.splitext(file_path)[1].lower()
 
-                if file_extension in supported_extensions:
-                    try:
-                        loader_class = document_loaders[file_extension]
-                        if file_extension == ".txt":
-                            loader = loader_class(file_path, encoding="utf-8")
-                        else:
-                            loader = loader_class(file_path)
-                        loaded_docs = loader.load()
-
-                        for doc in loaded_docs:
-                            doc.page_content = clean_document_text(doc.page_content)
-                            doc.metadata["source"] = source
-                            doc.metadata["file_path"] = file_path
-                            doc.metadata["timestamp"] = datetime.now().isoformat()
-                            estimate_document_quality(doc)
-
-                        documents.extend(loaded_docs)
-                        self.logger.info(f"成功加载文件: {file_path}")
-                    except Exception as e:
-                        self.logger.error(f"加载文件 {file_path} 失败: {str(e)}")
-                else:
+                if file_extension not in supported_extensions:
                     self.logger.warning(f"不支持的文件类型: {file_path}")
+                    continue
+                file_paths.append(file_path)
 
-        return documents
+        return self._load_files(file_paths)
 
     def process_documents(self, directory_path, parent_chunk_size=None, child_chunk_size=None, chunk_overlap=None):
         """使用原始切分器进行两级切分（保持与原有代码完全一致）"""
@@ -234,43 +252,8 @@ class LlamaIndexProcessor:
         return child_chunks
 
     def _load_selected_files(self, file_paths: list[str]) -> list:
-        """只加载指定文件列表（跳过不需要重新处理的文件），复用 OCR 加载器"""
-        documents = []
-        source = None
-        supported_extensions = document_loaders.keys()
-
-        for file_path in file_paths:
-            file_extension = os.path.splitext(file_path)[1].lower()
-
-            if file_extension not in supported_extensions:
-                self.logger.warning(f"不支持的文件类型: {file_path}")
-                continue
-
-            if source is None:
-                parent_dir = os.path.basename(os.path.dirname(file_path))
-                source = parent_dir.replace("_data", "")
-
-            try:
-                loader_class = document_loaders[file_extension]
-                if file_extension == ".txt":
-                    loader = loader_class(file_path, encoding="utf-8")
-                else:
-                    loader = loader_class(file_path)
-                loaded_docs = loader.load()
-
-                for doc in loaded_docs:
-                    doc.page_content = clean_document_text(doc.page_content)
-                    doc.metadata["source"] = source
-                    doc.metadata["file_path"] = file_path
-                    doc.metadata["timestamp"] = datetime.now().isoformat()
-                    estimate_document_quality(doc)
-
-                documents.extend(loaded_docs)
-                self.logger.info(f"成功加载文件: {file_path}")
-            except Exception as e:
-                self.logger.error(f"加载文件 {file_path} 失败: {str(e)}")
-
-        return documents
+        """只加载指定文件列表（复用 _load_files 核心逻辑）"""
+        return self._load_files(file_paths)
 
     def incremental_process_and_index(
         self,
@@ -410,24 +393,6 @@ class LlamaIndexProcessor:
             "total_chunks": total_chunks,
         }
 
-    def add_documents(self, documents):
-        """
-        使用 LlamaIndex 索引添加文档（支持增量更新）
-        documents: list[langchain_core.documents.Document]
-        """
-        llama_docs = [LlamaDocument(text=doc.page_content, metadata=doc.metadata) for doc in documents]
-
-        for doc in llama_docs:
-            self.index.insert(doc)
-
-        self.index.storage_context.persist(persist_dir=self.storage_dir)
-        self.logger.info(f"成功添加 {len(documents)} 个文档到索引")
-
-    def query(self, query_str, k=5):
-        """查询索引"""
-        query_engine = self.index.as_query_engine(similarity_top_k=k)
-        return query_engine.query(query_str)
-
 
 # 保持与原有 API 兼容
 def load_documents_from_directory(directory_path):
@@ -463,75 +428,150 @@ def incremental_process_and_index(
     )
 
 
-if __name__ == "__main__":
-    # ---- 质量评估冒烟测试 ----
-    print("=" * 50)
-    print("estimate_document_quality 冒烟测试")
-    print("=" * 50)
+def discover_data_dirs(base_dir: str | None = None) -> list[str]:
+    """自动发现 base_dir 下所有 *_data 子目录，按名称排序返回绝对路径列表。"""
+    if base_dir is None:
+        base_dir = DATA_DIR
+    base_dir = os.path.abspath(base_dir)
+    if not os.path.isdir(base_dir):
+        return []
+    dirs = []
+    for name in sorted(os.listdir(base_dir)):
+        full = os.path.join(base_dir, name)
+        if os.path.isdir(full) and name.endswith("_data"):
+            dirs.append(full)
+    return dirs
 
-    test_cases = [
-        ("", "空文本"),
-        ("   \n\n  ", "仅空白"),
-        ("机器学习概述 监督学习 无监督学习", "短中文"),
-        ("!" * 100, "全是标点"),
-        ("人工智能" * 200, "长干净中文（800字）"),
-        ("Hello World! This is a test document with some English text.", "短英文"),
-        ("机器学习!!概述学!!习!!", "混合噪音中文"),
-    ]
 
-    for text, label in test_cases:
-        doc = LangchainDocument(page_content=text, metadata={})
-        score = estimate_document_quality(doc)
-        print(f"[{label}] score={score:.4f}, is_low={doc.metadata['is_low_quality']}, len={len(text)}")
+def batch_process_directories(
+    directories: list[str],
+    parent_chunk_size: int | None = None,
+    child_chunk_size: int | None = None,
+    chunk_overlap: int | None = None,
+) -> dict[str, dict]:
+    """用单个 LlamaIndexProcessor 实例批量处理多个学科目录。
 
-    print()
+    避免 shell 循环中反复初始化嵌入模型和 Milvus 连接，一次加载、顺序处理。
+    返回 {目录名: 处理结果} 的字典。
+    """
+    if not directories:
+        print("没有需要处理的目录。")
+        return {}
 
-    # ---- 增量处理流程 ----
     processor = LlamaIndexProcessor()
-    directory_path = os.path.join(DATA_DIR, "ai_data")
+    results: dict[str, dict] = {}
 
-    # 首次运行 — 全部 NEW
-    print("=" * 50)
-    print("首次增量处理")
-    print("=" * 50)
-    result = processor.incremental_process_and_index(directory_path)
-    print(f"结果: {result}")
+    for i, dir_path in enumerate(directories, 1):
+        abs_path = os.path.abspath(dir_path)
+        subject = os.path.basename(abs_path).replace("_data", "")
+        print(f"\n{'='*60}")
+        print(f"[{i}/{len(directories)}] 开始处理学科: {subject}")
+        print(f"     目录: {abs_path}")
+        print(f"{'='*60}")
 
-    # 第二次运行 — 全部 UNCHANGED
-    print()
-    print("=" * 50)
-    print("第二次增量处理（应全部跳过）")
-    print("=" * 50)
-    result2 = processor.incremental_process_and_index(directory_path)
-    print(f"结果: {result2}")
+        if not os.path.isdir(abs_path):
+            print(f"  [跳过] 目录不存在: {abs_path}")
+            continue
 
-    # 查询
-    print()
-    print("=" * 50)
-    print("查询测试")
-    print("=" * 50)
-    from llama_index.core import Settings
-    from llama_index.core.llms import LLMMetadata
-    from llama_index.llms.openai.base import OpenAI as LlamaOpenAI
-
-    from base.config import Config
-
-    class DeepSeekLLM(LlamaOpenAI):
-        @property
-        def metadata(self):
-            return LLMMetadata(
-                context_window=128000,
-                num_output=self.max_tokens or -1,
-                model_name=self.model,
-                is_chat_model=True,
-                is_function_calling_model=True,
+        try:
+            result = processor.incremental_process_and_index(
+                abs_path,
+                parent_chunk_size=parent_chunk_size,
+                child_chunk_size=child_chunk_size,
+                chunk_overlap=chunk_overlap,
             )
+            results[subject] = result
+            print(f"  [完成] {subject}: {result}")
+        except Exception as e:
+            print(f"  [失败] {subject}: {e}")
+            results[subject] = {"error": str(e)}
 
-    conf2 = Config()
-    Settings.llm = DeepSeekLLM(
-        model=conf2.LLM_MODEL,
-        api_key=conf2.DASHSCOPE_API_KEY,
-        api_base=conf2.DASHSCOPE_BASE_URL,
+    # 汇总
+    print(f"\n{'='*60}")
+    print("批量处理汇总")
+    print(f"{'='*60}")
+    total_new = total_modified = total_deleted = total_chunks = 0
+    for subject, r in results.items():
+        if "error" in r:
+            print(f"  {subject}: ❌ {r['error']}")
+        else:
+            print(
+                f"  {subject}: "
+                f"新增={r.get('new', 0)}, "
+                f"修改={r.get('modified', 0)}, "
+                f"删除={r.get('deleted', 0)}, "
+                f"未变={r.get('unchanged', 0)}, "
+                f"块数={r.get('total_chunks', 0)}"
+            )
+            total_new += r.get("new", 0)
+            total_modified += r.get("modified", 0)
+            total_deleted += r.get("deleted", 0)
+            total_chunks += r.get("total_chunks", 0)
+    print(
+        f"  合计: "
+        f"新增={total_new}, 修改={total_modified}, "
+        f"删除={total_deleted}, 总块数={total_chunks}"
     )
-    response = processor.query("AI学科的课程内容是什么")
-    print(response)
+
+    return results
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="LlamaIndex 增量文档处理 — OCR加载 → 切分 → 嵌入 → 写入 Milvus",
+    )
+    parser.add_argument(
+        "directories",
+        nargs="*",
+        help="文档目录路径（可指定多个，空格分隔；不指定则默认处理 rag_qa/data/ai_data）",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="自动发现 rag_qa/data/ 下所有 *_data 目录并批量处理",
+    )
+    parser.add_argument("--parent-chunk-size", type=int, default=None, help="父块大小（默认使用 config.ini 配置）")
+    parser.add_argument("--child-chunk-size", type=int, default=None, help="子块大小（默认使用 config.ini 配置）")
+    parser.add_argument("--chunk-overlap", type=int, default=None, help="块重叠大小（默认使用 config.ini 配置）")
+    args = parser.parse_args()
+
+    # 确定要处理的目录列表
+    if args.all:
+        directories = discover_data_dirs()
+        if not directories:
+            print(f"未在 {DATA_DIR} 下找到任何 *_data 目录。")
+            exit(1)
+        print(f"自动发现 {len(directories)} 个学科目录: {[os.path.basename(d) for d in directories]}")
+    elif args.directories:
+        directories = args.directories
+    else:
+        # 默认：单目录兼容旧行为
+        directories = [os.path.join(DATA_DIR, "ai_data")]
+
+    # 校验目录存在性（提前报错，避免跑到一半才发现）
+    valid_dirs = []
+    for d in directories:
+        abs_d = os.path.abspath(d)
+        if os.path.isdir(abs_d):
+            valid_dirs.append(abs_d)
+        else:
+            print(f"警告: 目录不存在，跳过 — {abs_d}")
+    if not valid_dirs:
+        print("错误: 没有有效的目录可供处理。")
+        exit(1)
+
+    results = batch_process_directories(
+        valid_dirs,
+        parent_chunk_size=args.parent_chunk_size,
+        child_chunk_size=args.child_chunk_size,
+        chunk_overlap=args.chunk_overlap,
+    )
+
+    # 检查是否有失败的
+    failures = {k: v for k, v in results.items() if "error" in v}
+    if failures:
+        print(f"\n{failures}")
+        exit(1)
+    print("\n全部处理完成。")

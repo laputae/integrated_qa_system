@@ -10,7 +10,6 @@ from sentence_transformers import CrossEncoder
 from base import Config, logger
 from base.metrics import qa_rag_retrieval_latency_seconds
 
-from .document_processor import *
 from .embedding_cache import get_query_embedding_cached
 from .embedding_registry import batch_embed, create_milvus_model, get_dense_dim, supports_sparse
 
