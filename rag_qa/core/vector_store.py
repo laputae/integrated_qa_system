@@ -1,41 +1,35 @@
+"""
+向量存储 — 基于 LlamaIndex MilvusVectorStore。
+
+读路径：hybrid_search_with_rerank() 使用 LlamaIndex VectorStoreQuery(HYBRID)
+写路径：add_documents() 通过 MilvusVectorStore.add() 插入 TextNode
+BGE-Reranker 作为后处理重排序，查询嵌入缓存委托给 embedding_cache 模块。
+"""
+
 import hashlib
 import os
 import time
 
 import torch
 from langchain_core.documents import Document
-from pymilvus import AnnSearchRequest, DataType, MilvusClient, WeightedRanker
 from sentence_transformers import CrossEncoder
 
 from base import Config, logger
 from base.metrics import qa_rag_retrieval_latency_seconds
 
 from .embedding_cache import get_query_embedding_cached
-from .embedding_registry import batch_embed, create_milvus_model, get_dense_dim, supports_sparse
+from .embedding_registry import (
+    batch_embed,
+    create_milvus_model,
+    create_sparse_embedding_function,
+    get_dense_dim,
+    supports_sparse,
+)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 rag_qa_path = os.path.dirname(current_dir)
 
 conf = Config()
-
-
-def _sparse_to_dict(sparse_row) -> dict:
-    """Convert sparse vector to dict, handling csr_matrix, dict, and empty formats."""
-    if hasattr(sparse_row, "indices"):
-        # csr_matrix (BGEM3 output)
-        indices = sparse_row.indices if hasattr(sparse_row, "indices") else sparse_row.col
-        return dict(zip(indices, sparse_row.data))
-    elif isinstance(sparse_row, dict):
-        # Redis JSON round-trip converts int keys to strings — convert them back
-        if sparse_row and not isinstance(next(iter(sparse_row.keys())), int):
-            return {int(k): float(v) for k, v in sparse_row.items()}
-        return sparse_row
-    else:
-        return {}
-
-
-# Alias for backward compatibility within this module
-_sparse_row_to_dict = _sparse_to_dict
 
 
 class VectorStore:
@@ -70,7 +64,7 @@ class VectorStore:
         if self.device == "cuda":
             self.reranker.model.half()
         self.reranker_score_threshold = conf.RERANKER_SCORE_THRESHOLD
-        # 通过注册表获取嵌入模型
+        # 通过注册表获取嵌入模型（用于查询缓存）
         model_name = conf.EMBEDDING_MODEL
         self.logger.info(f"使用嵌入模型: {model_name}")
         self.embedding_function = create_milvus_model(
@@ -81,66 +75,42 @@ class VectorStore:
         self.dense_dim = get_dense_dim(model_name)
         if not supports_sparse(model_name):
             self.logger.warning(f"模型 '{model_name}' 不支持稀疏向量，混合检索将降级为纯稠密检索")
-        # 初始化 Milvus 客户端
-        self.client = MilvusClient(
-            uri=f"http://{self.host}:{self.port}",
-            db_name=self.database,
-            timeout=conf.MILVUS_TIMEOUT,
+        # 初始化 LlamaIndex MilvusVectorStore（替代原 pymilvus MilvusClient）
+        self._init_vector_store()
+
+    def _init_vector_store(self):
+        """初始化 LlamaIndex MilvusVectorStore。"""
+        from llama_index.vector_stores.milvus import MilvusVectorStore
+
+        model_name = conf.EMBEDDING_MODEL
+        model_path = os.path.join(rag_qa_path, "models", model_name)
+
+        self._sparse_embed_fn = create_sparse_embedding_function(
+            model_name, model_path=model_path, device=self.device
         )
-        # 调用方法创建或加载 Milvus 集合
-        self._create_or_load_collection()
 
-    # 类私有化方法
-    def _create_or_load_collection(self):
-        # 检查指定集合是否已经存在
-        if not self.client.has_collection(self.collection_name):
-            # 创建集合 Schema，禁用自动 ID，启用动态字段
-            schema = self.client.create_schema(auto_id=False, enable_dynamic_field=True)
-            # 添加 ID 字段，作为主键，VARCHAR 类型，最大长度 100
-            schema.add_field(field_name="id", datatype=DataType.VARCHAR, is_primary=True, max_length=100)
-            # 添加文本字段，VARCHAR 类型，最大长度 65535
-            schema.add_field(field_name="text", datatype=DataType.VARCHAR, max_length=65535)
-            # 添加稠密向量字段，FLOAT_VECTOR 类型，维度由嵌入函数指定
-            schema.add_field(field_name="dense_vector", datatype=DataType.FLOAT_VECTOR, dim=self.dense_dim)
-            # 添加稀疏向量字段，SPARSE_FLOAT_VECTOR 类型
-            schema.add_field(field_name="sparse_vector", datatype=DataType.SPARSE_FLOAT_VECTOR)
-            # 添加父块 ID 字段，VARCHAR 类型，最大长度 100
-            schema.add_field(field_name="parent_id", datatype=DataType.VARCHAR, max_length=100)
-            # 添加父块内容字段，VARCHAR 类型，最大长度 65535
-            schema.add_field(field_name="parent_content", datatype=DataType.VARCHAR, max_length=65535)
-            # 添加学科类别字段，VARCHAR 类型，最大长度 50
-            schema.add_field(field_name="source", datatype=DataType.VARCHAR, max_length=50)
-            # 添加时间戳字段，VARCHAR 类型，最大长度 50
-            schema.add_field(field_name="timestamp", datatype=DataType.VARCHAR, max_length=50)
+        self.milvus_vector_store = MilvusVectorStore(
+            uri=f"http://{self.host}:{self.port}",
+            collection_name=self.collection_name,
+            db_name=self.database,
+            dim=self.dense_dim,
+            embedding_field="dense_vector",
+            sparse_embedding_field="sparse_vector",
+            text_key="text",
+            enable_sparse=self._sparse_embed_fn is not None,
+            sparse_embedding_function=self._sparse_embed_fn,
+            overwrite=False,
+            hybrid_ranker="WeightedRanker",
+            hybrid_ranker_params={"weights": [1.0, 0.7]},
+        )
+        logger.info(f"已加载集合 {self.collection_name}")
 
-            # 创建索引参数对象
-            index_params = self.client.prepare_index_params()
-            # 为稠密向量字段添加 IVF_FLAT 索引
-            index_params.add_index(
-                field_name="dense_vector",
-                index_name="dense_index",
-                index_type="IVF_FLAT",
-                metric_type="IP",
-                params={"nlist": 128},
-            )
-            # 为稀疏向量字段添加 SPARSE_INVERTED_INDEX 索引
-            index_params.add_index(
-                field_name="sparse_vector",
-                index_name="sparse_index",
-                index_type="SPARSE_INVERTED_INDEX",
-                metric_type="IP",
-                params={"drop_ratio_build": 0.2},
-            )
-
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                schema=schema,
-                index_params=index_params,
-            )
-            logger.info(f"已创建集合 {self.collection_name}")
-        else:
-            logger.info(f"已加载集合 {self.collection_name}")
-        self.client.load_collection(self.collection_name)
+    @property
+    def client(self):
+        """暴露 MilvusClient，供健康检查和 chunk_sweep 使用。"""
+        if self.milvus_vector_store is not None:
+            return self.milvus_vector_store.client
+        return None
 
     # 定义方法，向向量存储添加文档
     def add_documents(self, documents, batch_size=None, use_checkpoint=True):
@@ -167,26 +137,25 @@ class VectorStore:
             desc="Embedding documents",
         )
 
-        data = []
+        from llama_index.core.schema import TextNode
+
+        nodes = []
         for i, doc in enumerate(documents):
-            text_hash = hashlib.md5(doc.page_content.encode("utf-8")).hexdigest()
-            sparse_vector = embeddings["sparse"][i]
-            data.append(
-                {
-                    "id": text_hash,
-                    "text": doc.page_content,
-                    "dense_vector": embeddings["dense"][i],
-                    "sparse_vector": sparse_vector,
-                    "parent_id": doc.metadata["parent_id"],
-                    "parent_content": doc.metadata["parent_content"],
+            node = TextNode(
+                text=doc.page_content,
+                metadata={
+                    "parent_id": doc.metadata.get("parent_id", ""),
+                    "parent_content": doc.metadata.get("parent_content", ""),
                     "source": doc.metadata.get("source", "unknown"),
                     "timestamp": doc.metadata.get("timestamp", "unknown"),
-                }
+                },
             )
+            node.embedding = embeddings["dense"][i]
+            nodes.append(node)
 
-        if data:
-            self.client.upsert(collection_name=self.collection_name, data=data)
-            logger.info(f"已插入或更新 {len(data)} 个文档")
+        if nodes:
+            self.milvus_vector_store.add(nodes)
+            logger.info(f"已插入或更新 {len(nodes)} 个文档")
 
     # 定义方法，执行混合检索并重排序
     def hybrid_search_with_rerank(self, query, k=conf.RETRIEVAL_K, source_filter=None, top_k=None):
@@ -195,50 +164,29 @@ class VectorStore:
         query_embeddings = get_query_embedding_cached(
             query, self.embedding_function, self._redis_client, conf, self.logger
         )
-        dense_query_vector = query_embeddings["dense"][0]
-        sparse_query_vector = _sparse_row_to_dict(query_embeddings["sparse"][0])
-        # 初始化过滤表达式
-        filter_expr = f"source == '{source_filter}'" if source_filter else ""
+        dense_query_vector = query_embeddings["dense"][0].tolist()
+        sparse_query_vector = query_embeddings["sparse"][0]
 
-        if not sparse_query_vector:
-            # 稀疏向量为空时降级为纯稠密检索
-            self.logger.warning("稀疏查询向量为空，降级为纯稠密检索")
-            results = self.client.search(
-                collection_name=self.collection_name,
-                data=[dense_query_vector],
-                anns_field="dense_vector",
-                search_params={"metric_type": "IP", "params": {"nprobe": 10}},
-                limit=k,
-                filter=filter_expr,
-                output_fields=["text", "parent_id", "parent_content", "source", "timestamp"],
-            )[0]
-        else:
-            # 创建稠密向量搜索请求
-            dense_request = AnnSearchRequest(
-                data=[dense_query_vector],
-                anns_field="dense_vector",
-                param={"metric_type": "IP", "params": {"nprobe": 10}},
-                limit=k,
-                expr=filter_expr,
-            )
-            # 创建稀疏向量搜索请求
-            sparse_request = AnnSearchRequest(
-                data=[sparse_query_vector],
-                anns_field="sparse_vector",
-                param={"metric_type": "IP", "params": {}},
-                limit=k,
-                expr=filter_expr,
-            )
-            ranker = WeightedRanker(1.0, 0.7)
-            results = self.client.hybrid_search(
-                collection_name=self.collection_name,
-                reqs=[dense_request, sparse_request],
-                ranker=ranker,
-                limit=k,
-                output_fields=["text", "parent_id", "parent_content", "source", "timestamp"],
-            )[0]
+        # 构建 LlamaIndex 混合检索查询
+        from llama_index.core.vector_stores import VectorStoreQuery
+        from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters, VectorStoreQueryMode
 
-        sub_chunks = [self._doc_from_hit(hit["entity"]) for hit in results]
+        vs_query = VectorStoreQuery(
+            query_str=query,
+            query_embedding=dense_query_vector,
+            similarity_top_k=k,
+            mode=VectorStoreQueryMode.HYBRID,
+        )
+
+        if source_filter:
+            vs_query.filters = MetadataFilters(
+                filters=[MetadataFilter(key="source", value=source_filter)]
+            )
+
+        # 通过 LlamaIndex MilvusVectorStore 执行混合检索
+        result = self.milvus_vector_store.query(vs_query)
+
+        sub_chunks = [self._doc_from_node(node) for node in result.nodes]
         parent_docs = self._get_unique_parent_docs(sub_chunks)
 
         if not parent_docs:
@@ -284,13 +232,13 @@ class VectorStore:
                 parent_contents.add(parent_content)
         return unique_docs
 
-    def _doc_from_hit(self, hit):
+    def _doc_from_node(self, node):
         return Document(
-            page_content=hit.get("text"),
+            page_content=node.text,
             metadata={
-                "parent_id": hit.get("parent_id"),
-                "parent_content": hit.get("parent_content"),
-                "source": hit.get("source"),
-                "timestamp": hit.get("timestamp"),
+                "parent_id": node.metadata.get("parent_id", ""),
+                "parent_content": node.metadata.get("parent_content", ""),
+                "source": node.metadata.get("source", ""),
+                "timestamp": node.metadata.get("timestamp", ""),
             },
         )

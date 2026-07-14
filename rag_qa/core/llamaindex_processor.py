@@ -97,14 +97,31 @@ class LlamaIndexProcessor:
         self.logger.info(f"嵌入模型初始化完成: {model_path} (model={model_name})")
 
     def _init_vector_store(self):
-        """初始化 Milvus 向量存储（使用独立 collection 避免与 pymilvus 路径冲突）"""
+        """初始化 Milvus 向量存储（字段名与 VectorStore 对齐，共享同一集合）。"""
+        from .embedding_registry import create_sparse_embedding_function
+
+        model_name = conf.EMBEDDING_MODEL
+        model_path = os.path.join(MODEL_DIR, model_name)
+        device = "cuda" if USE_CUDA else "cpu"
+
+        self.sparse_embed_fn = create_sparse_embedding_function(
+            model_name, model_path=model_path, device=device
+        )
+
         self.llamaindex_collection = conf.MILVUS_COLLECTION_NAME
         self.vector_store = MilvusVectorStore(
             uri=f"http://{conf.MILVUS_HOST}:{conf.MILVUS_PORT}",
             collection_name=self.llamaindex_collection,
             db_name=conf.MILVUS_DATABASE_NAME,
-            dim=get_dense_dim(conf.EMBEDDING_MODEL),
+            dim=get_dense_dim(model_name),
+            embedding_field="dense_vector",
+            sparse_embedding_field="sparse_vector",
+            text_key="text",
+            enable_sparse=self.sparse_embed_fn is not None,
+            sparse_embedding_function=self.sparse_embed_fn,
             overwrite=False,
+            hybrid_ranker="WeightedRanker",
+            hybrid_ranker_params={"weights": [1.0, 0.7]},
         )
         self.logger.info(f"Milvus 向量存储初始化完成: {self.llamaindex_collection}")
 

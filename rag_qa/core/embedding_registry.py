@@ -299,3 +299,48 @@ def _save_checkpoint(path: str, data: dict):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
     os.replace(tmp, path)
+
+
+# ============================================================
+# LlamaIndex sparse embedding function adapter
+# ============================================================
+
+
+def create_sparse_embedding_function(name: str, model_path: str = None, device: str = None):
+    """为 LlamaIndex MilvusVectorStore 创建 BaseSparseEmbeddingFunction。
+
+    将 BGE-M3 的 BGEM3EmbeddingFunction 适配为 LlamaIndex 兼容接口。
+    纯稠密模型返回 None。
+    """
+    info = get_model_info(name)
+    if not info["supports_sparse"]:
+        return None
+    if device is None:
+        device = "cpu"
+    if model_path is None:
+        model_path = os.path.join(MODEL_DIR, name)
+    if not os.path.exists(model_path):
+        logger.warning(f"模型目录不存在: {model_path}。首次使用将下载（需要联网）。")
+
+    from llama_index.vector_stores.milvus.utils import BaseSparseEmbeddingFunction
+    from milvus_model.hybrid import BGEM3EmbeddingFunction
+
+    bge_m3 = BGEM3EmbeddingFunction(
+        model_name_or_path=model_path,
+        use_fp16=(device == "cuda"),
+        device=device,
+    )
+
+    class _BgeM3SparseAdapter(BaseSparseEmbeddingFunction):
+        """将 BGEM3EmbeddingFunction 适配为 BaseSparseEmbeddingFunction。"""
+
+        def encode_queries(self, queries):
+            result = bge_m3.encode_queries(queries)
+            return [dict(zip(row.indices, row.data)) for row in result["sparse"]]
+
+        def encode_documents(self, documents):
+            result = bge_m3.encode_documents(documents)
+            return [dict(zip(row.indices, row.data)) for row in result["sparse"]]
+
+    logger.info(f"已创建稀疏嵌入函数 (model={name}, device={device})")
+    return _BgeM3SparseAdapter()
