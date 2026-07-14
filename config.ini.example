@@ -23,7 +23,7 @@ db = 0
 host = 127.0.0.1
 port = 19530
 database_name = itcast
-collection_name = edurag_final
+collection_name = edu_rag
 timeout = 10
 
 # ---------- LLM 配置 ----------

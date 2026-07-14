@@ -70,7 +70,7 @@ class Config:
         self.MILVUS_HOST = self.config.get("milvus", "host", fallback="localhost")
         self.MILVUS_PORT = self.config.get("milvus", "port", fallback="19530")
         self.MILVUS_DATABASE_NAME = self.config.get("milvus", "database_name", fallback="itcast")
-        self.MILVUS_COLLECTION_NAME = self.config.get("milvus", "collection_name", fallback="edurag_final")
+        self.MILVUS_COLLECTION_NAME = self.config.get("milvus", "collection_name", fallback="edu_rag")
         self.MILVUS_TIMEOUT = self.config.getint("milvus", "timeout", fallback=10)
 
         # LLM 配置

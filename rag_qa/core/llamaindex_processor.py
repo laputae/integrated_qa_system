@@ -98,7 +98,7 @@ class LlamaIndexProcessor:
 
     def _init_vector_store(self):
         """初始化 Milvus 向量存储（使用独立 collection 避免与 pymilvus 路径冲突）"""
-        self.llamaindex_collection = conf.MILVUS_COLLECTION_NAME + "_llamaindex"
+        self.llamaindex_collection = conf.MILVUS_COLLECTION_NAME
         self.vector_store = MilvusVectorStore(
             uri=f"http://{conf.MILVUS_HOST}:{conf.MILVUS_PORT}",
             collection_name=self.llamaindex_collection,
