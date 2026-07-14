@@ -47,3 +47,4 @@ rag_qa/data/
 *.txt
 *.pptx
 *.pdf
+*.csv
