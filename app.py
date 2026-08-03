@@ -16,7 +16,7 @@ from routers.v1.chunk_config_routes import router as chunk_config_router
 from routers.v1.eval_routes import router as eval_router
 from routers.v1.routes import router as routes_router
 from routers.v1.ws import router as ws_router
-
+from mcp_server import mcp_app
 qa_system = IntegratedQASystem()
 
 logger.info("Config loaded from config.ini — all required settings present.")
@@ -29,7 +29,8 @@ async def lifespan(app: FastAPI):
     await qa_system.health.start_background_recovery()
     if qa_system.eval_service:
         await qa_system.eval_service.start_periodic_eval()
-    yield
+    async with mcp_app.lifespan(mcp_app):
+        yield
     if qa_system.eval_service:
         await qa_system.eval_service.stop_periodic_eval()
     await qa_system.health.close()
@@ -58,7 +59,7 @@ app.include_router(routes_router)
 app.include_router(eval_router)
 app.include_router(chunk_config_router)
 app.include_router(ws_router)
-
+app.mount("/mcp",mcp_app)
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -66,4 +67,4 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=False)
