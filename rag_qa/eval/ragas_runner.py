@@ -122,7 +122,7 @@ def run_ragas(dataset: Dataset, config: Config, log=None) -> dict:
     )
 
     return {
-        "faithfulness": result.get("faithfulness", []),
+        "faithfulness": result.score.get("faithfulness", []),
         "answer_relevancy": result.get("answer_relevancy", []),
         "context_precision": result.get("context_precision", []),
         "context_recall": result.get("context_recall", []),
