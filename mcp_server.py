@@ -40,8 +40,7 @@ async def rag_query(
     """
     qa_system = _get_qa_system()
     semaphore = _get_semaphore()
-    session_id = str(uuid.uuid4())
-
+    # session_id不需要传入
     collected = ""
     async for token, is_complete in qa_system.aquery(
         query,
@@ -49,7 +48,7 @@ async def rag_query(
         user_id=0,
         tenant_id=0,
         source_filter=source_filter,
-        session_id=session_id,
+        session_id=None,
         external_context=external_context,
     ):
         collected += token

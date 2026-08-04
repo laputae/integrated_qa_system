@@ -287,7 +287,7 @@ class IntegratedQASystem:
 
     def _record_query_metrics(self, level, source, session_id, user_id, tenant_id, query, answer, start_time):
         """Record Prometheus metrics and update session history."""
-        if session_id and answer:
+        if session_id and answer and user_id>0:
             self.update_session_history(session_id, user_id, tenant_id, query, answer)
         processing_time = time.time() - start_time
         src = source or "all"
