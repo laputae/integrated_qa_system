@@ -27,9 +27,10 @@
   ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                      FastAPI 网关层                            │
-│   WebSocket 流式  │  REST API  │  JWT认证  │  静态前端 (HTML/JS)│
+│   WebSocket 流式  │  REST API  │  MCP Server  │  JWT认证  │  静态前端  │
 │   中间件: 安全过滤 → 速率限制 → JWT校验 → 安全响应头            │
 │   路由层: routers/v1/ (auth / routes / eval / chunk / ws)      │
+│   MCP: /mcp (FastMCP streamable-http, 2 tools)                │
 └──────────────────────────────────────────────────────────────┘
   │
   ▼
@@ -200,6 +201,7 @@ integrated_qa_system/
 │
 ├── main.py                        # 主调度器（IntegratedQASystem + 组件初始化 + 降级编排）
 ├── app.py                         # FastAPI 主入口（中间件注册 + 路由挂载 + 静态服务 + 启动事件）
+├── mcp_server.py                  # MCP Server（FastMCP，rag_query + check_system_health 2 个 Tool）
 ├── config.ini                     # 全局配置文件（单一配置源）
 ├── config.ini.example             # 配置文件模板（不含敏感信息）
 ├── pyproject.toml                 # 项目元数据与依赖（uv 管理）
@@ -753,7 +755,7 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 make docker-up    # Docker 完整栈
 ```
 
-启动后访问 `http://localhost:8000` 使用 Web 聊天界面（登录/注册 + 流式对话 + 会话管理）。
+启动后访问 `http://localhost:8000` 使用 Web 聊天界面（登录/注册 + 流式对话 + 会话管理），或通过 `/mcp` 端点接入 MCP 客户端。
 
 API 端点：
 
@@ -774,6 +776,7 @@ API 端点：
 | GET | `/api/history/{session_id}` | 获取对话历史 | 必须 |
 | POST | `/api/history/delete` | 批量删除对话历史（逻辑删除） | 必须 |
 | GET | `/api/sources` | 获取支持的学科类别 | 无 |
+| GET/POST | `/mcp` | MCP Server 端点（streamable-http，含 rag_query 和 check_system_health） | 无 |
 | GET | `/metrics` | Prometheus 指标端点（业务 + HTTP 指标） | 可选 Basic Auth |
 | GET | `/api/chunk-config` | 获取当前 Chunk 配置 | 必须 |
 | PUT | `/api/chunk-config` | 热更新 Chunk 配置（内存生效，不持久化） | 管理员 |
@@ -1100,6 +1103,37 @@ HTTP 层指标（请求数、延迟等）由 `prometheus-fastapi-instrumentator`
 - **Markdown 渲染**：使用 marked.js 渲染富文本回答（代码块、表格等）
 - **WebSocket 流式**：RAG 流式生成时逐 token 刷新 Markdown 渲染
 - `static/src/App.jsx` 提供了 React JSX 版本的组件实现，可按需构建
+
+### MCP Server — 外部工具集成
+
+`mcp_server.py` 基于 [FastMCP](https://github.com/jlowin/fastmcp) 将 RAG 问答能力以 MCP (Model Context Protocol) Tool 形式对外暴露，允许 Claude Desktop、Cursor 等 AI 客户端通过标准 MCP 协议调用系统能力。
+
+**挂载路径**：`/mcp`，使用 `streamable-http` 传输协议，在 FastAPI `lifespan` 中统一管理生命周期。
+
+**对外暴露的 Tool**：
+
+| Tool | 功能 | 参数 |
+|------|------|------|
+| `rag_query` | 企业级 RAG 查询，基于 BM25 + RAG 双级检索 | `query`(必填), `source_filter`(可选: `ai_data`/`jpkb`), `external_context`(可选) |
+| `check_system_health` | 检查系统组件健康状态（MySQL/Redis/Milvus/LLM） | 无 |
+
+**关键设计**：
+- `rag_query` 复用 `IntegratedQASystem.aquery()` 流式管线，收集完整回答后返回；若检测到幻觉自动附加【幻觉提示】后缀
+- `check_system_health` 返回格式化的 JSON，包含 `status` 和 `components` 各组件布尔状态
+- 两个 Tool 通过懒加载方式获取 `app.py` 中的 `qa_system` 全局实例，避免循环导入
+
+**MCP 客户端配置示例**（如 Claude Desktop `claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "rag-mcp": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
 
 ## 评估
 
