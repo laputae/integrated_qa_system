@@ -65,15 +65,19 @@
 
 ### 多级降级体系
 
-系统注册 10 个组件健康检查，按故障影响范围自动计算降级等级：
+系统注册 10 个组件健康检查，按故障影响范围自动计算降级等级。
 
-| 等级 | 名称 | 触发条件 | 行为 |
+> **等级语义**：降级等级 = 当前所有不健康组件中"影响最严重"的一个（各组件映射等级取最大值），
+> **各等级是互斥状态，不是故障的逐级叠加**。例如 Redis 与 Milvus 同时故障 → Level 2（而非 "Level 1+2"）；
+> 仅 LLM 故障时 Redis / Milvus / MySQL 均可能正常工作。
+
+| 等级 | 名称 | 触发条件（当前最严重的故障） | 行为 |
 |------|------|---------|------|
 | Level 0 | 全功能 | 全部健康 | 正常运行 |
-| Level 1 | 无 Redis | Redis 不可用 | 停用查询缓存、限流计数、Token 黑名单 |
-| Level 2 | 无 Milvus | Milvus / Embedding / Reranker / Classifier / LLM Reranker / HallucinationGuard 不可用 | 仅 BM25，不执行 RAG |
-| Level 3 | 无 LLM | LLM 不可用 | BM25 优先，Fallback 时返回原始检索上下文 |
-| Level 4 | 无 MySQL | MySQL 不可用 | 返回 503，拒绝所有查询 |
+| Level 1 | 无 Redis | Redis 不健康（Milvus / LLM / MySQL 正常） | 停用查询缓存、限流计数、Token 黑名单，RAG 不受影响 |
+| Level 2 | 无 Milvus | Milvus / Embedding / Reranker / Classifier / LLM Reranker / HallucinationGuard 中至少一个不健康（Redis / LLM / MySQL 可能正常） | BM25 命中即答；未命中时提示 "RAG 不可用" |
+| Level 3 | 无 LLM | LLM 不健康（Redis / MySQL 可能正常） | BM25 命中即答；未命中且 Milvus / Embedding / Reranker 健康时，直接检索返回原始上下文（不生成答案）；Milvus 组亦故障则提示 "RAG 不可用" |
+| Level 4 | 无 MySQL | MySQL 不健康（其余组件可能正常） | 返回 503，拒绝所有查询 |
 
 每个组件配备独立熔断器（3 次连续失败 → OPEN → 30s cooldown → HALF_OPEN 探测），后台 asyncio 任务按可配置间隔自动探测故障组件并恢复。
 

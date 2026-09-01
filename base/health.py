@@ -144,6 +144,12 @@ class SystemHealth:
         self._get_cached_or_refresh()
         return self._compute_degradation_level()
 
+    def get_component_status(self, name: str) -> HealthStatus | None:
+        """Return one component's cached status (refreshing if the cache is stale)."""
+        self._get_cached_or_refresh()
+        component = self._health_cache.get(name)
+        return component.status if component else None
+
     def is_ready(self) -> bool:
         """Can the app serve traffic? Level 4 (no MySQL) means not ready."""
         return self.get_degradation_level() < DegradationLevel.LEVEL4_NO_MYSQL

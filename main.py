@@ -11,7 +11,7 @@ from openai import (
 )
 
 from base import Config, logger
-from base.health import DegradationLevel, SystemHealth
+from base.health import DegradationLevel, HealthStatus, SystemHealth
 from base.metrics import (
     qa_bm25_hit_total,
     qa_llm_call_total,
@@ -267,22 +267,45 @@ class IntegratedQASystem:
                 return None, True
         return None, True
 
-    def _resolve_pipeline_action(self, level, answer, need_rag):
+    # Level 3 降级检索（无 LLM 直接检索）依赖的组件组
+    _RAG_RETRIEVAL_COMPONENTS = ("milvus", "embedding", "reranker")
+
+    def _rag_retrieval_available(self) -> bool:
+        """Milvus 组组件是否全部健康，足以支撑无 LLM 的降级检索。
+
+        降级路径使用 strategy="direct"，不经过 classifier 与 LLM 重排，
+        因此仅需 milvus + embedding + reranker 三个组件。
+        """
+        return all(
+            self.health.get_component_status(name) == HealthStatus.HEALTHY
+            for name in self._RAG_RETRIEVAL_COMPONENTS
+        )
+
+    def _resolve_pipeline_action(self, level, answer, need_rag, rag_retrieval_available):
         """Determine next pipeline action after BM25 phase (pure logic, no I/O).
 
         Returns (action, payload):
         - ('bm25_hit', answer)   — BM25 matched, yield answer directly
         - ('not_found', msg)     — RAG unavailable, yield error message
-        - ('degraded', None)     — LEVEL3_NO_LLM, do degraded retrieval
+        - ('degraded', None)     — LEVEL3_NO_LLM and Milvus retrieval healthy: return raw context
         - ('full_rag', None)     — Full RAG pipeline with LLM streaming
+
+        等级语义：降级等级 = 当前最严重故障组件的映射等级（取最大值），不是故障
+        叠加。Level 3 只说明 LLM 是最严重故障，Milvus 组可能同时故障，因此
+        degraded 分支必须额外检查 milvus/embedding/reranker 的健康状态。
         """
         if answer:
             return ("bm25_hit", answer)
-        if not (need_rag and self.rag_system and level < DegradationLevel.LEVEL2_NO_MILVUS):
-            msg = f"RAG 不可用 (降级等级: {level.name})" if level >= DegradationLevel.LEVEL2_NO_MILVUS else "未找到答案"
-            return ("not_found", msg)
-        if level == DegradationLevel.LEVEL3_NO_LLM:
-            return ("degraded", None)
+        if not need_rag:
+            return ("not_found", "未找到答案")
+        if not self.rag_system:
+            if level >= DegradationLevel.LEVEL2_NO_MILVUS:
+                return ("not_found", f"RAG 不可用 (降级等级: {level.name})")
+            return ("not_found", "未找到答案")
+        if level >= DegradationLevel.LEVEL2_NO_MILVUS:
+            if level == DegradationLevel.LEVEL3_NO_LLM and rag_retrieval_available:
+                return ("degraded", None)
+            return ("not_found", f"RAG 不可用 (降级等级: {level.name})")
         return ("full_rag", None)
 
     def _record_query_metrics(self, level, source, session_id, user_id, tenant_id, query, answer, start_time):
@@ -320,7 +343,9 @@ class IntegratedQASystem:
 
         history = self.get_session_history(session_id, user_id, tenant_id) if session_id else []
         answer, need_rag = self._bm25_phase(query)
-        action, payload = self._resolve_pipeline_action(level, answer, need_rag)
+        action, payload = self._resolve_pipeline_action(
+            level, answer, need_rag, rag_retrieval_available=self._rag_retrieval_available()
+        )
 
         if action == "bm25_hit":
             self.logger.info(f"MySQL答案: {payload}")
@@ -389,7 +414,9 @@ class IntegratedQASystem:
         )
 
         answer, need_rag = await loop.run_in_executor(self.executor, self._bm25_phase, query)
-        action, payload = self._resolve_pipeline_action(level, answer, need_rag)
+        action, payload = self._resolve_pipeline_action(
+            level, answer, need_rag, rag_retrieval_available=self._rag_retrieval_available()
+        )
 
         if action == "bm25_hit":
             self.logger.info(f"[async] MySQL答案: {payload}")
