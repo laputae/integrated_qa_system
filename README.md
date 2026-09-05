@@ -344,7 +344,7 @@ timeout = 10
 
 [llm]
 model = deepseek-v4-pro
-deepseek_api_key = ${DEEPSEEK_API_KEY}   # 引用环境变量，密钥写项目根目录 .env（复制 .env.example）
+deepseek_api_key = <your-api-key>        # 密钥明文写在 config.ini（该文件已 gitignore）
 deepseek_base_url = https://api.deepseek.com
 
 [vlm]
@@ -1040,7 +1040,7 @@ HTTP 层指标（请求数、延迟等）由 `prometheus-fastapi-instrumentator`
 `base/config.py` 使用 Python 的 `configparser` 实现配置管理，`config.ini` 为唯一配置来源：
 
 - **单例模式**：`Config` 类全局唯一实例，所有模块通过 `Config()` 获取同一配置对象
-- **密钥管理**：API Key 等敏感信息放项目根目录 `.env`（已 gitignore，模板见 `.env.example`），`config.ini` 中以 `${ENV_VAR}` 形式引用；`base/config.py` 启动时加载 `.env` 并统一展开引用，未设置变量时保留原文、由非空校验兜底报错
+- **密钥管理**：密钥明文写在 `config.ini`（已 gitignore，不进仓库）；`base/config.py` 读取时统一展开 `${ENV_VAR}` 形式的环境变量引用——如希望密钥走环境变量（如 Docker 部署），写成 `deepseek_api_key = ${DEEPSEEK_API_KEY}` 即可，未设置时保留原文、由非空校验兜底报错
 - **启动校验**：`Config.__init__()` 检查 `jwt_secret_key` 和 `deepseek_api_key` 必填字段，缺失时明确报错并提示参考 `config.ini.example`
 - **类型安全**：提供 `getint()`、`getfloat()`、`getboolean()` 类型化读取方法，避免字符串误用
 - **Docker 适配**：docker-compose 通过环境变量将容器网络服务名注入 `config.ini` 对应字段（`MYSQL_HOST`/`REDIS_HOST`/`MILVUS_HOST`），应用层无需感知容器编排
