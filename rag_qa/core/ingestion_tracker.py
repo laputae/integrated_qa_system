@@ -14,7 +14,7 @@ from datetime import datetime
 
 from base import logger
 
-SUPPORTED_EXTENSIONS = {".txt", ".pdf", ".docx", ".ppt", ".pptx", ".jpg", ".png", ".md"}
+SUPPORTED_EXTENSIONS = {".txt", ".pdf", ".docx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png", ".md"}
 
 
 class IngestionTracker:

@@ -59,6 +59,7 @@ document_loaders = {
     ".ppt": OCRPPTLoader,
     ".pptx": OCRPPTLoader,
     ".jpg": OCRIMGLoader,
+    ".jpeg": OCRIMGLoader,
     ".png": OCRIMGLoader,
     ".md": UnstructuredMarkdownLoader if UnstructuredMarkdownLoader is not None else TextLoader,
 }
