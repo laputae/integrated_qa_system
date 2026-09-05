@@ -57,6 +57,7 @@ dependencies = [
     "llama-index-llms-openai>=0.7.9",
     "fastmcp>=2.14.1",
     "dashscope>=1.27.4",
+    "python-dotenv>=1.2.2",
 ]
 
 

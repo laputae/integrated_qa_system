@@ -46,7 +46,7 @@ COPY --from=builder /app/.venv /app/.venv
 
 # 复制应用源码
 # 注意: config.ini 不打包进镜像，运行时通过 volume 挂载
-COPY app.py main.py ./
+COPY app.py core.py ./
 COPY config.ini.example ./
 COPY base/ base/
 COPY db_models/ db_models/

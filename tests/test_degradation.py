@@ -12,7 +12,7 @@ from base import Config, logger
 from base.health import SystemHealth
 from base.health_types import ComponentHealth, HealthStatus
 from base.health_types import DegradationLevel
-from main import IntegratedQASystem
+from core import IntegratedQASystem
 
 
 def _make_system(rag_system=object()):

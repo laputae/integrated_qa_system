@@ -93,8 +93,8 @@ class IntegratedQASystem:
     def _init_llm(self):
         try:
             client = OpenAI(
-                api_key=self.config.DASHSCOPE_API_KEY,
-                base_url=self.config.DASHSCOPE_BASE_URL,
+                api_key=self.config.DEEPSEEK_API_KEY,
+                base_url=self.config.DEEPSEEK_BASE_URL,
             )
             self.logger.info("LLM 客户端初始化成功")
             return client

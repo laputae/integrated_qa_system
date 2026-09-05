@@ -1,9 +1,12 @@
 # 导入配置ini文件的解析库
 import configparser
 import json
+import re
 
 # 导入路径操作
 import os
+
+from dotenv import load_dotenv
 
 # 获取当前文件的绝对路径
 current_file_path = os.path.abspath(__file__)
@@ -13,6 +16,27 @@ current_dir_path = os.path.dirname(current_file_path)
 project_root = os.path.dirname(current_dir_path)
 
 config_file_path = os.path.join(project_root, "config.ini")
+
+# 加载 .env 文件中的环境变量（已存在的环境变量不会被覆盖）。
+# 密钥等敏感信息统一放 .env（gitignore），config.ini 中用 ${ENV_VAR} 引用。
+load_dotenv(os.path.join(project_root, ".env"))
+
+
+def load_project_dotenv() -> None:
+    """加载项目根目录的 .env 文件（幂等，供独立入口在读取配置前调用）。"""
+    load_dotenv(os.path.join(project_root, ".env"))
+
+# 匹配 ${ENV_VAR} 形式的环境变量引用
+_ENV_PATTERN = re.compile(r"\$\{(\w+)\}")
+
+
+def expand_env_vars(value: str) -> str:
+    """展开字符串中的 ${ENV_VAR} 引用为环境变量实际值。
+
+    - 变量未定义时保留原文（如 ${UNSET_VAR}），由后续非空校验兜底报错
+    - 不含 ${} 的值原样返回，完全向后兼容明文写法
+    """
+    return _ENV_PATTERN.sub(lambda m: os.environ.get(m.group(1), m.group(0)), value)
 
 _config_singleton = None
 
@@ -46,13 +70,18 @@ class Config:
             return
         self._initialized = True
 
-        # 1. 创建配置文件解析器
-        self.config = configparser.ConfigParser()
+        # 1. 创建配置文件解析器（interpolation=None 避免值中的 % 触发原生插值报错）
+        self.config = configparser.ConfigParser(interpolation=None)
         # 2. 读取配置文件
         with open(config_file, encoding="utf-8") as fp:
             self.config.read_file(fp)
 
-        # 3. 获取相关的配置（仅从 config.ini 读取，不再通过环境变量覆盖）
+        # 2.5 统一展开所有值中的 ${ENV_VAR} 引用
+        for section in self.config.sections():
+            for key, value in self.config.items(section, raw=True):
+                self.config.set(section, key, expand_env_vars(value))
+
+        # 3. 获取相关的配置（config.ini + .env/环境变量：密钥通过 ${ENV_VAR} 引用）
 
         # 3.1 MySQL 数据库配置
         self.MYSQL_HOST = self.config.get("mysql", "host", fallback="localhost")
@@ -75,8 +104,8 @@ class Config:
 
         # LLM 配置
         self.LLM_MODEL = self.config.get("llm", "model", fallback="deepseek-v4-pro")
-        self.DASHSCOPE_API_KEY = self.config.get("llm", "dashscope_api_key", fallback="")
-        self.DASHSCOPE_BASE_URL = self.config.get("llm", "dashscope_base_url", fallback="https://api.deepseek.com")
+        self.DEEPSEEK_API_KEY = self.config.get("llm", "deepseek_api_key", fallback="")
+        self.DEEPSEEK_BASE_URL = self.config.get("llm", "deepseek_base_url", fallback="https://api.deepseek.com")
 
         # Chunking 策略配置
         self.CHUNK_DEFAULT_STRATEGY = self.config.get("chunking", "default_strategy", fallback="recursive")
@@ -211,8 +240,8 @@ class Config:
         missing = []
         if not self.JWT_SECRET_KEY:
             missing.append("[auth] jwt_secret_key")
-        if not self.DASHSCOPE_API_KEY:
-            missing.append("[llm] dashscope_api_key")
+        if not self.DEEPSEEK_API_KEY:
+            missing.append("[llm] deepseek_api_key")
 
         if missing:
             raise ValueError(

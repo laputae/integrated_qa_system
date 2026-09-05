@@ -205,7 +205,7 @@ integrated_qa_system/
 │   ├── index.html                 # 单页应用（登录/注册 + 聊天界面 + 会话管理）
 │   └── src/App.jsx                # React JSX 组件
 │
-├── main.py                        # 主调度器（IntegratedQASystem + 组件初始化 + 降级编排）
+├── core.py                        # 主调度器（IntegratedQASystem + 组件初始化 + 降级编排）
 ├── app.py                         # FastAPI 主入口（中间件注册 + 路由挂载 + 静态服务 + 启动事件）
 ├── mcp_server.py                  # MCP Server（FastMCP，rag_query + check_system_health 2 个 Tool）
 ├── config.ini                     # 全局配置文件（单一配置源）
@@ -344,8 +344,8 @@ timeout = 10
 
 [llm]
 model = deepseek-v4-pro
-dashscope_api_key =           # 你的 API Key（也支持环境变量 DEEPSEEK_API_KEY）
-dashscope_base_url = https://api.deepseek.com
+deepseek_api_key = ${DEEPSEEK_API_KEY}   # 引用环境变量，密钥写项目根目录 .env（复制 .env.example）
+deepseek_base_url = https://api.deepseek.com
 
 [vlm]
 model = qwen3.7-flash         # 千问 VL 视觉模型（图片/扫描页识别用）
@@ -713,7 +713,7 @@ git clone <repo-url>
 cd integrated_qa_system
 
 # 2. 配置环境变量（可选，也可使用 config.ini 默认值）
-#    编辑 config.ini，至少设置 [llm] dashscope_api_key 和 [auth] jwt_secret_key
+#    编辑 config.ini，至少设置 [llm] deepseek_api_key 和 [auth] jwt_secret_key
 
 # 3. 构建镜像并启动全部服务（基础设施 + 应用）
 docker compose --profile dev up -d --build
@@ -801,7 +801,7 @@ API 端点：
 ### 方式二：命令行交互
 
 ```bash
-uv run python main.py               # 集成问答（BM25 + RAG + 对话历史）
+uv run python core.py               # 集成问答（BM25 + RAG + 对话历史）
 uv run python mysql_qa/main.py     # MySQL BM25 独立问答
 ```
 
@@ -1040,7 +1040,8 @@ HTTP 层指标（请求数、延迟等）由 `prometheus-fastapi-instrumentator`
 `base/config.py` 使用 Python 的 `configparser` 实现配置管理，`config.ini` 为唯一配置来源：
 
 - **单例模式**：`Config` 类全局唯一实例，所有模块通过 `Config()` 获取同一配置对象
-- **启动校验**：`Config.__init__()` 检查 `jwt_secret_key` 和 `dashscope_api_key` 必填字段，缺失时明确报错并提示参考 `config.ini.example`
+- **密钥管理**：API Key 等敏感信息放项目根目录 `.env`（已 gitignore，模板见 `.env.example`），`config.ini` 中以 `${ENV_VAR}` 形式引用；`base/config.py` 启动时加载 `.env` 并统一展开引用，未设置变量时保留原文、由非空校验兜底报错
+- **启动校验**：`Config.__init__()` 检查 `jwt_secret_key` 和 `deepseek_api_key` 必填字段，缺失时明确报错并提示参考 `config.ini.example`
 - **类型安全**：提供 `getint()`、`getfloat()`、`getboolean()` 类型化读取方法，避免字符串误用
 - **Docker 适配**：docker-compose 通过环境变量将容器网络服务名注入 `config.ini` 对应字段（`MYSQL_HOST`/`REDIS_HOST`/`MILVUS_HOST`），应用层无需感知容器编排
 

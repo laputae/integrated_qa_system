@@ -70,8 +70,8 @@ def create_langchain_llm(config: Config):
     from ragas.llms import llm_factory
 
     model = config.EVAL_LLM_MODEL or config.LLM_MODEL
-    base_url = config.EVAL_LLM_BASE_URL or config.DASHSCOPE_BASE_URL
-    api_key = config.DASHSCOPE_API_KEY
+    base_url = config.EVAL_LLM_BASE_URL or config.DEEPSEEK_BASE_URL
+    api_key = config.DEEPSEEK_API_KEY
 
     client = OpenAI(api_key=api_key, base_url=base_url)
     return llm_factory(model, client=client)
@@ -83,7 +83,7 @@ def create_langchain_embeddings(config: Config):
 
     base_url = config.EVAL_EMBEDDING_BASE_URL
     model = config.EVAL_EMBEDDING_MODEL
-    api_key = config.DASHSCOPE_API_KEY
+    api_key = config.DEEPSEEK_API_KEY
 
     if "11434" in base_url or "ollama" in base_url.lower():
         client = OpenAI(api_key="ollama", base_url=base_url.rstrip("/") + "/v1")

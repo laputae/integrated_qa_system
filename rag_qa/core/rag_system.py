@@ -260,7 +260,7 @@ if __name__ == "__main__":
     def call_dashscope(prompt):
         from openai import OpenAI
 
-        client = OpenAI(api_key=Config().DASHSCOPE_API_KEY, base_url=Config().DASHSCOPE_BASE_URL)
+        client = OpenAI(api_key=Config().DEEPSEEK_API_KEY, base_url=Config().DEEPSEEK_BASE_URL)
         try:
             completion = client.chat.completions.create(
                 model=Config().LLM_MODEL,

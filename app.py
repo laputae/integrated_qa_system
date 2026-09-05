@@ -10,7 +10,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from base import logger
 from gateway.middleware import GatewayMiddleware
 from gateway.security_headers import SecurityHeadersMiddleware
-from main import IntegratedQASystem
+from core import IntegratedQASystem
 from routers.v1.auth import router as auth_router
 from routers.v1.chunk_config_routes import router as chunk_config_router
 from routers.v1.eval_routes import router as eval_router

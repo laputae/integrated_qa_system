@@ -4,8 +4,8 @@
 JSON，再扁平化为可拼接进 RAG chunk 的文本。
 
 配置来源：
-- config.ini [vlm] 段：model、api_host（拼 DashScope 原生 /api/v1 地址）
-- 环境变量 DASHSCOPE_API_KEY：业务空间 API Key（必需）
+- config.ini [vlm] 段：model、api_key（支持 ${DASHSCOPE_API_KEY} 引用环境变量/.env）、api_host（拼 DashScope 原生 /api/v1 地址）
+- 环境变量 DASHSCOPE_API_KEY：业务空间 API Key（兜底，config.ini 未配置 api_key 时直接读取）
 """
 
 import base64
@@ -20,11 +20,15 @@ import dashscope
 from dashscope import MultiModalConversation
 from PIL import Image
 
+from base.config import expand_env_vars, load_project_dotenv
 
-def _load_vlm_config() -> tuple[str, str, int, float]:
-    """从 config.ini 读取 [vlm] base_url(或 api_host)/model 和 [retry] 重试参数。"""
-    parser = configparser.ConfigParser()
+
+def _load_vlm_config() -> tuple[str, str, str, int, float]:
+    """从 config.ini 读取 [vlm] base_url(或 api_host)/api_key/model 和 [retry] 重试参数。"""
+    parser = configparser.ConfigParser(interpolation=None)
     config_path = Path(__file__).resolve().parents[2] / "config.ini"
+    # .env 中可能定义 api_key 引用的环境变量，先加载（不覆盖已有环境变量）
+    load_project_dotenv()
     if config_path.exists():
         parser.read(config_path, encoding="utf-8")
     # base_url 优先；否则用 api_host 拼 DashScope 原生 /api/v1 路径
@@ -34,6 +38,8 @@ def _load_vlm_config() -> tuple[str, str, int, float]:
         if api_host:
             base_url = f"https://{api_host}/api/v1"
     model = parser.get("vlm", "model", fallback="qwen3.7-flash")
+    # api_key 支持 ${DASHSCOPE_API_KEY} 引用；为空时调用处兜底读系统环境变量
+    vlm_api_key = expand_env_vars(parser.get("vlm", "api_key", fallback=""))
     if not base_url:
         raise RuntimeError(
             "config.ini 缺少 [vlm] api_host 配置，例如 "
@@ -41,10 +47,10 @@ def _load_vlm_config() -> tuple[str, str, int, float]:
         )
     max_retries = parser.getint("retry", "max_retries", fallback=3)
     base_delay = parser.getfloat("retry", "base_delay", fallback=1.0)
-    return base_url, model, max_retries, base_delay
+    return base_url, vlm_api_key, model, max_retries, base_delay
 
 
-VLM_BASE_URL, VLM_MODEL, VLM_MAX_RETRIES, VLM_RETRY_BASE_DELAY = _load_vlm_config()
+VLM_BASE_URL, VLM_API_KEY, VLM_MODEL, VLM_MAX_RETRIES, VLM_RETRY_BASE_DELAY = _load_vlm_config()
 # DashScope 原生 SDK 的服务地址（参考: dashscope.base_http_api_url = "https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1"）
 dashscope.base_http_api_url = VLM_BASE_URL
 
@@ -82,7 +88,7 @@ def get_vlm():
         for attempt in range(1, VLM_MAX_RETRIES + 1):
             try:
                 response = MultiModalConversation.call(
-                    api_key=os.getenv("DASHSCOPE_API_KEY"),
+                    api_key=VLM_API_KEY or os.getenv("DASHSCOPE_API_KEY"),
                     model=VLM_MODEL,
                     messages=[
                         {
