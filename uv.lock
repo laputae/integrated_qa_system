@@ -615,6 +615,27 @@ wheels = [
 ]
 
 [[package]]
+name = "dashscope"
+version = "1.27.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "certifi" },
+    { name = "cryptography" },
+    { name = "httpx" },
+    { name = "httpx-sse" },
+    { name = "requests" },
+    { name = "rich" },
+    { name = "typer" },
+    { name = "typing-extensions" },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c4/ac/a0b4d67ff083a639c452fc2f5a06c00305f7d35b75440b07a626c4fe0c89/dashscope-1.27.4.tar.gz", hash = "sha256:424d6c6c6d4587a0a337f822003d91d513f8504a80632a9657fc806f996e5e29", size = 1779827, upload-time = "2026-09-04T12:07:31.348Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/3c/b2fd6d40e21a582ef54674b751a3968f71b6e7ef032aa0afe8ada276ede8/dashscope-1.27.4-py3-none-any.whl", hash = "sha256:360991e9305a4dd25f225ed9f46c9f16be6313f79f02e1e67b5105e46a427250", size = 1958290, upload-time = "2026-09-04T12:07:29.456Z" },
+]
+
+[[package]]
 name = "dataclasses-json"
 version = "0.6.7"
 source = { registry = "https://pypi.org/simple" }
@@ -1227,6 +1248,7 @@ source = { editable = "." }
 dependencies = [
     { name = "addict" },
     { name = "bcrypt" },
+    { name = "dashscope" },
     { name = "datasets" },
     { name = "fastapi" },
     { name = "fastmcp" },
@@ -1290,6 +1312,7 @@ dev = [
 requires-dist = [
     { name = "addict", specifier = ">=2.4.0" },
     { name = "bcrypt", specifier = "==4.1.1" },
+    { name = "dashscope", specifier = ">=1.27.4" },
     { name = "datasets", specifier = ">=5.0.0" },
     { name = "fastapi", specifier = ">=0.136.3" },
     { name = "fastmcp", specifier = ">=2.14.1" },
@@ -4703,6 +4726,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0b/02/ae6ceac1baeda530866a85075641cec12989bd8d31af6d5ab4a3e8c92f47/webencodings-0.5.1.tar.gz", hash = "sha256:b36a1c245f2d304965eb4e0a82848379241dc04b865afcc4aab16748587e1923", size = 9721, upload-time = "2017-04-05T20:21:34.189Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/24/2a3e3df732393fed8b3ebf2ec078f05546de641fe1b667ee316ec1dcf3b7/webencodings-0.5.1-py2.py3-none-any.whl", hash = "sha256:a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78", size = 11774, upload-time = "2017-04-05T20:21:32.581Z" },
+]
+
+[[package]]
+name = "websocket-client"
+version = "1.9.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/cb/a5abcc2891249f393827c650c6296660ce40374ac22d99ab9aea41f9d2a2/websocket_client-1.9.2.tar.gz", hash = "sha256:0fcb57545848be86992e128218fd96dd87a6769ffdb1a968dff79632b85604d0", size = 84110, upload-time = "2026-08-31T14:08:40.964Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/d2/cc4dc1271e464942db7ee278baae2daa99ee77cb2af744025c04da585a3e/websocket_client-1.9.2-py3-none-any.whl", hash = "sha256:e1a673830a9c7bfa47b1cd3d5e4178f4c9651d80a4eab02c9c23a1c3ec6250ce", size = 95786, upload-time = "2026-08-31T14:08:39.899Z" },
 ]
 
 [[package]]

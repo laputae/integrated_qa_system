@@ -8,6 +8,7 @@
 *.swp
 *.swo
 .iml
+.codebuddy/
 # ========== 日志文件 ==========
 *.log
 logs/
@@ -41,10 +42,5 @@ config.ini
 # ========== RAG 数据目录 ==========
 rag_qa/data/
 
-# ========== RAG使用的文档 ==========
-*.docx
-*.jpg
-*.txt
-*.pptx
-*.pdf
-*.csv
+# ========== 测试脚本 ==========
+scripts/

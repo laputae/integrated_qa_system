@@ -1,13 +1,16 @@
 from collections.abc import Iterator
 
+import numpy as np
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
+from PIL import Image
 
 from .edu_ocr import get_ocr
+from .edu_vlm import get_vlm, image_to_png_bytes, vlm_json_to_text
 
 
 class OCRIMGLoader(BaseLoader):
-    """An example document loader that reads a file line by line."""
+    """独立图片加载器：优先用千问 VL 生成结构化 JSON，失败时回退本地 OCR。"""
 
     def __init__(self, img_path: str) -> None:
         """Initialize the loader with a file path.
@@ -29,9 +32,17 @@ class OCRIMGLoader(BaseLoader):
         yield Document(page_content=line, metadata={"source": self.img_path})
 
     def img2text(self):
+        # 千问 VL 识别，返回结构化 JSON 后扁平化为文本
+        vlm = get_vlm()
+        image = Image.open(self.img_path)
+        data = vlm(image_to_png_bytes(image.convert("RGB")))
+        if data:
+            return vlm_json_to_text(data)
+
+        # VLM 失败/返回空时，回退本地 OCR
         resp = ""
         ocr = get_ocr()
-        result, _ = ocr(self.img_path)
+        result, _ = ocr(np.array(image.convert("RGB")))
         if result:
             ocr_result = [line[1] for line in result]
             resp += "\n".join(ocr_result)

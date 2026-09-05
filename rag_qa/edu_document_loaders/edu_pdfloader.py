@@ -8,11 +8,13 @@ from langchain_core.documents import Document
 from PIL import Image
 from tqdm import tqdm
 
-from .edu_ocr import get_ocr
+from .edu_vlm import get_vlm, image_to_png_bytes, vlm_json_to_text
 
-# PDF OCR 控制：只对宽高超过页面一定比例（图片宽/页面宽，图片高/页面高）的图片进行 OCR。
+# PDF 图片控制：只对宽高超过页面一定比例（图片宽/页面宽，图片高/页面高）的图片送千问 VL 识别。
 # 这样可以避免 PDF 中一些小图片的干扰，提高非扫描版 PDF 处理速度
 PDF_OCR_THRESHOLD = (0.6, 0.6)
+# 页面可提取文本低于该字符数且未处理过大图时，整页渲染送 VL（兜底纯扫描页）
+PAGE_TEXT_MIN_CHARS = 30
 
 
 class OCRPDFLoader(BaseLoader):
@@ -38,7 +40,7 @@ class OCRPDFLoader(BaseLoader):
         yield Document(page_content=line, metadata={"source": self.file_path})
 
     def pdf2text(self):
-        ocr = get_ocr()
+        vlm = get_vlm()
         # 打开pdf文件
         doc = fitz.open(self.file_path)
         ## 获取页数
@@ -58,6 +60,7 @@ class OCRPDFLoader(BaseLoader):
             img_list = page.get_image_info(xrefs=True)
             # print(f'img_list--》{img_list}')
             # print(f'img_list--》{len(img_list)}')
+            page_vlm_done = False
             for img in img_list:
                 # xref一种编号，指向该图像对象在PDF文件中的位置，程序可以通过这个编号快速定位和提取图像数据。
                 if xref := img.get("xref"):
@@ -69,22 +72,29 @@ class OCRPDFLoader(BaseLoader):
                     ) < PDF_OCR_THRESHOLD[1]:
                         continue
                     pix = fitz.Pixmap(doc, xref)
+                    if pix.colorspace and pix.colorspace.n > 3:  # CMYK 等色彩空间转 RGB
+                        pix = fitz.Pixmap(fitz.csRGB, pix)
                     # print(f'page.rotation-->{page.rotation}')
                     if int(page.rotation) != 0:  # 如果Page有旋转角度，则旋转图片
                         img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, -1)
                         tmp_img = Image.fromarray(img_array)
                         ori_img = cv2.cvtColor(np.array(tmp_img), cv2.COLOR_RGB2BGR)
                         rot_img = self.rotate_img(img=ori_img, angle=360 - page.rotation)
-                        img_array = cv2.cvtColor(rot_img, cv2.COLOR_RGB2BGR)
+                        img_bytes = image_to_png_bytes(Image.fromarray(cv2.cvtColor(rot_img, cv2.COLOR_BGR2RGB)))
                     else:
-                        img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, -1)
+                        img_bytes = pix.tobytes("png")
 
-                    # result：包含了图像中检测到的所有文本框的位置、文本内容和置信度信息。
-                    # _：它是一个包含了时间数据的列表，可以用于优化模型运行速度。
-                    result, _ = ocr(img_array)
-                    if result:
-                        ocr_result = [line[1] for line in result]
-                        resp += "\n".join(ocr_result)
+                    # 送千问 VL 识别，返回结构化 JSON 后扁平化为文本
+                    page_vlm_done = True
+                    data = vlm(img_bytes)
+                    if data:
+                        resp += "\n" + vlm_json_to_text(data)
+            # 纯扫描页兜底：可提取文本极少且没有处理过大图时，整页渲染送 VL
+            if len(text.strip()) < PAGE_TEXT_MIN_CHARS and not page_vlm_done:
+                page_pix = page.get_pixmap(dpi=150)
+                data = vlm(page_pix.tobytes("png"))
+                if data:
+                    resp += "\n" + vlm_json_to_text(data)
             # 更新进度
             b_unit.update(1)
         return resp

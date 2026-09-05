@@ -1,14 +1,13 @@
 from collections.abc import Iterator
 from io import BytesIO
 
-import numpy as np
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 from PIL import Image
 from pptx import Presentation
 from tqdm import tqdm
 
-from .edu_ocr import get_ocr
+from .edu_vlm import get_vlm, image_to_png_bytes, vlm_json_to_text
 
 
 class OCRPPTLoader(BaseLoader):
@@ -37,8 +36,8 @@ class OCRPPTLoader(BaseLoader):
         # 打开指定路径的 PowerPoint 文件
         prs = Presentation(filepath)
         print(f"prs-->{prs}")
-        # 获取 OCR 功能的实例
-        ocr = get_ocr()
+        # 获取千问 VL 识别功能的实例
+        vlm = get_vlm()
         # 初始化一个空字符串，用于存储提取的文本内容
         resp = ""
 
@@ -67,13 +66,11 @@ class OCRPPTLoader(BaseLoader):
             if shape.shape_type == 13:  # 13 表示图片
                 # 使用 BytesIO 打开图片数据并转换为图像对象
                 image = Image.open(BytesIO(shape.image.blob))
-                # 使用 OCR 处理图像并获取结果
-                result, _ = ocr(np.array(image))
-                if result:  # 如果 OCR 有结果
-                    # 提取 OCR 结果中的文本行
-                    ocr_result = [line[1] for line in result]
-                    # 将 OCR 提取的文本添加到resp中，以换行分隔
-                    resp += "\n".join(ocr_result)
+                # 使用千问 VL 处理图像并获取结构化 JSON
+                data = vlm(image_to_png_bytes(image))
+                if data:
+                    # 将 VL 返回的 JSON 扁平化为文本添加到resp中
+                    resp += "\n" + vlm_json_to_text(data)
 
             # 检查形状是否为组合形状（shape_type == 6）
             elif shape.shape_type == 6:  # 6 表示组合
