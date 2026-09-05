@@ -154,7 +154,9 @@ integrated_qa_system/
 │   │   ├── retrieval_strategies.py # 检索策略实现（回溯/HyDE/子查询并行），独立函数抽取
 │   │   ├── llm_reranker.py        # LLM Listwise 重排序（关键查询二次精排）
 │   │   ├── prompts.py             # LangChain Prompt 模板（Few-shot + external_context + LLM Reranker）
-│   │   └── nli_guard.py           # HallucinationGuard — mDeBERTa-v3 NLI 逐句验证，SoftGate 旁路标记
+│   │   ├── nli_guard.py           # HallucinationGuard — mDeBERTa-v3 NLI 逐句验证，SoftGate 旁路标记
+│   │   └── bert_query_classifier/ # BERT 查询分类器微调权重（query_classifier 加载）
+│   ├── data/                      # 文档数据目录（ai_data 等学科子目录 + llamaindex_storage 向量库 + ingestion_tracker.db）
 │   ├── edu_document_loaders/      # 自定义文档加载器（VL 多模态识别 + OCR 兜底）
 │   │   ├── edu_vlm.py             # 千问 VL 封装（DashScope 原生 SDK，图片→结构化 JSON→chunk 文本）
 │   │   ├── edu_pdfloader.py       # PDF 加载器（PyMuPDF 文本 + 大图送 VL + 纯扫描页整页识别兜底）
@@ -166,6 +168,7 @@ integrated_qa_system/
 │   │   ├── edu_chinese_recursive_text_splitter.py  # 中文感知递归分割器
 │   │   ├── edu_model_text_spliter.py               # ModelScope BERT 语义分割器
 │   │   └── chunk_strategy.py      # 分割策略工厂（recursive/semantic/markdown）
+│   ├── nlp_bert_document-segmentation_chinese-base/  # 语义分割模型（本地存在则优先，否则自动从 ModelScope 下载）
 │   ├── rag_assesment/             # RAGAS 质量评估
 │   ├── eval/                      # 评估自动化管道
 │   │   ├── __init__.py
@@ -191,6 +194,7 @@ integrated_qa_system/
 ├── tests/                         # 测试
 │   ├── conftest.py                # Pytest 共享 fixture
 │   ├── test_document_quality.py   # 文档质量评估冒烟测试
+│   ├── test_degradation.py        # 多级降级与调度层测试
 │   ├── test_strategy_cache.py     # 策略选择缓存测试
 │   ├── test_chunk_config.py       # 自适应 Chunk 配置单元/集成测试
 │   ├── test_chunk_strategy.py     # 分割策略工厂测试
@@ -245,6 +249,7 @@ uv sync
 #   - (可选) BAAI/bge-large-zh    → rag_qa/models/bge-large-zh/
 #   - (可选) shibing624/text2vec-large-chinese → rag_qa/models/text2vec-large-chinese/
 #   - (可选) MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7 → rag_qa/models/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7/  (HallucinationGuard)
+#   - (可选) iic/nlp_bert_document-segmentation_chinese-base → rag_qa/nlp_bert_document-segmentation_chinese-base/  (semantic 分割；不下载则运行时自动从 ModelScope 拉取)
 ```
 
 ## Docker 部署
@@ -349,8 +354,9 @@ deepseek_base_url = https://api.deepseek.com
 
 [vlm]
 model = qwen3.7-flash         # 千问 VL 视觉模型（图片/扫描页识别用）
+api_key =                     # 业务空间专用 Key：明文写 config.ini，或填 ${DASHSCOPE_API_KEY} 引用环境变量；
+                              # 留空则图片自动降级为本地 OCR
 api_host = {WorkspaceId}.cn-beijing.maas.aliyuncs.com  # 阿里云 MaaS 业务空间 Host
-                              # API Key 用环境变量 DASHSCOPE_API_KEY（业务空间专用 Key）
 
 [embedding]
 model = bge-m3                # 可选: bge-m3 | bge-large-zh | text2vec-large-chinese
@@ -816,9 +822,9 @@ uv run python mysql_qa/main.py     # MySQL BM25 独立问答
 | OCRPDFLoader | `.pdf` | PyMuPDF 提取文本 + 大图（≥60% 页面占比）送 VL；**纯扫描页兜底**：页文本 < 30 字符且无大图时整页渲染送 VL |
 | OCRDOCLoader | `.docx` | 段落/表格提取 + 图片 OCR |
 | OCRPPTLoader | `.ppt` `.pptx` | 本地提取文本框架/表格 + 图片 shape 送 VL |
-| OCRIMGLoader | `.png` `.jpg` | 独立图片 VL 优先，失败自动回退本地 OCR |
+| OCRIMGLoader | `.png` `.jpg` `.jpeg` | 独立图片 VL 优先，失败自动回退本地 OCR |
 
-**VL 调用配置**：`config.ini` `[vlm]` 段配置模型名与业务空间 `api_host`，API Key 通过环境变量 `DASHSCOPE_API_KEY` 提供（需业务空间专用 Key）。内置指数退避重试（复用 `[retry]` 配置）；401 鉴权失败不重试、直接降级。
+**VL 调用配置**：`config.ini` `[vlm]` 段配置模型名、业务空间 `api_host` 与 `api_key`（需业务空间专用 Key；`api_key` 可明文写入 config.ini，也可填 `${DASHSCOPE_API_KEY}` 引用环境变量，留空则图片自动降级为本地 OCR）。内置指数退避重试（复用 `[retry]` 配置）；401 鉴权失败不重试、直接降级。
 
 **OCR 兜底引擎**：VL 失败或不可用时回退 RapidOCR（优先 Paddle，fallback ONNX Runtime/CPU），保证入库流程不中断。
 
@@ -1192,6 +1198,7 @@ uv run pytest tests/test_chunk_config.py -v
 | 文件 | 内容 |
 |------|------|
 | `test_document_quality.py` | 文档质量评估冒烟测试 |
+| `test_degradation.py` | 多级降级与调度层测试（core.py 集成） |
 | `test_strategy_cache.py` | 检索策略选择缓存测试 |
 | `test_chunk_config.py` | 自适应 Chunk 配置单元/集成测试 |
 | `test_chunk_strategy.py` | 分割策略工厂测试 |
