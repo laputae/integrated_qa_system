@@ -14,6 +14,7 @@
 | **健康检查** | 10 组件独立健康探测（MySQL/Redis/Milvus/LLM/Embedding/Reranker/Classifier/LLM Reranker/HallucinationGuard/EvalQuality），`/health` `/ready` `/status` 端点 |
 | **多级降级** | 5 级自动降级（Level 0~4），熔断器 + 后台自动恢复，依赖故障时优雅降级而非崩溃 |
 | **生产韧性** | 数据库连接池（pool_size=10, max_overflow=20, pool_pre_ping, pool_recycle），LLM 指数退避重试，批量嵌入 Checkpoint/Resume 断点续传，asyncio.Semaphore 并发控制 |
+| **多模态文档识别** | 图片/扫描PDF/PPT图表经千问 VL（DashScope SDK）生成结构化 JSON 入库，OCR 自动兜底；VL 调用带指数退避重试与 401 快速降级 |
 | **纯 CPU 运行** | 全部依赖使用 CPU 版本，无需 GPU，降低部署门槛；OCR 引擎自动选择 RapidOCR ONNX Runtime |
 | **NLI 幻觉检测** | HallucinationGuard SoftGate — mDeBERTa-v3 逐句 NLI 验证，幻觉结果旁路标记而非阻断，WebSocket 实时告警客户端 |
 | **可观测性** | 结构化 JSON 日志（异步安全 RequestContext）+ Prometheus 全量指标（业务+检索+幻觉检测+健康）+ `/metrics` 端点（可选 Basic Auth 保护） |
@@ -154,12 +155,13 @@ integrated_qa_system/
 │   │   ├── llm_reranker.py        # LLM Listwise 重排序（关键查询二次精排）
 │   │   ├── prompts.py             # LangChain Prompt 模板（Few-shot + external_context + LLM Reranker）
 │   │   └── nli_guard.py           # HallucinationGuard — mDeBERTa-v3 NLI 逐句验证，SoftGate 旁路标记
-│   ├── edu_document_loaders/      # 自定义文档加载器（含 OCR）
-│   │   ├── edu_pdfloader.py       # PDF 加载器（PyMuPDF + OCR）
+│   ├── edu_document_loaders/      # 自定义文档加载器（VL 多模态识别 + OCR 兜底）
+│   │   ├── edu_vlm.py             # 千问 VL 封装（DashScope 原生 SDK，图片→结构化 JSON→chunk 文本）
+│   │   ├── edu_pdfloader.py       # PDF 加载器（PyMuPDF 文本 + 大图送 VL + 纯扫描页整页识别兜底）
 │   │   ├── edu_docloader.py       # DOCX 加载器（段落/表格 + OCR）
-│   │   ├── edu_pptloader.py       # PPT/PPTX 加载器（文本框架/表格 + OCR）
-│   │   ├── edu_imgloader.py       # 纯图片 OCR 加载器
-│   │   └── edu_ocr.py             # OCR 引擎工具（RapidOCR Paddle/ONNX 自动选择）
+│   │   ├── edu_pptloader.py       # PPT/PPTX 加载器（文本框架/表格提取 + 图片送 VL）
+│   │   ├── edu_imgloader.py       # 纯图片加载器（VL 优先，失败回退本地 OCR）
+│   │   └── edu_ocr.py             # OCR 引擎工具（RapidOCR Paddle/ONNX 自动选择，作兜底）
 │   ├── edu_text_spliter/          # 文本分割器
 │   │   ├── edu_chinese_recursive_text_splitter.py  # 中文感知递归分割器
 │   │   ├── edu_model_text_spliter.py               # ModelScope BERT 语义分割器
@@ -344,6 +346,11 @@ timeout = 10
 model = deepseek-v4-pro
 dashscope_api_key =           # 你的 API Key（也支持环境变量 DEEPSEEK_API_KEY）
 dashscope_base_url = https://api.deepseek.com
+
+[vlm]
+model = qwen3.7-flash         # 千问 VL 视觉模型（图片/扫描页识别用）
+api_host = {WorkspaceId}.cn-beijing.maas.aliyuncs.com  # 阿里云 MaaS 业务空间 Host
+                              # API Key 用环境变量 DASHSCOPE_API_KEY（业务空间专用 Key）
 
 [embedding]
 model = bge-m3                # 可选: bge-m3 | bge-large-zh | text2vec-large-chinese
@@ -639,7 +646,7 @@ rag_qa/data/
 
 自 v0.2 起，向量库构建统一使用 `LlamaIndexProcessor.incremental_process_and_index()` 增量管线，不再提供传统 pymilvus 全量构建方式。首次运行时自动执行全量索引，后续运行自动跳过未修改文件。
 
-> **前置条件**：运行前需确保 ① Milvus 服务已启动 ② BGE-M3 模型已下载到 `rag_qa/models/bge-m3/` ③ `config.ini` 中 `[milvus]` 连接信息正确 ④ 目标目录下有文档文件。
+> **前置条件**：运行前需确保 ① Milvus 服务已启动 ② BGE-M3 模型已下载到 `rag_qa/models/bge-m3/` ③ `config.ini` 中 `[milvus]` 连接信息正确 ④ 目标目录下有文档文件 ⑤ 如需图片/扫描页 VL 识别，设置环境变量 `DASHSCOPE_API_KEY`（业务空间 Key）并检查 `config.ini` `[vlm]` 配置——VL 不可用时图片自动降级为本地 OCR。
 
 ```bash
 # 处理单个学科目录（首次=全量索引，后续=仅处理变更文件）
@@ -800,18 +807,22 @@ uv run python mysql_qa/main.py     # MySQL BM25 独立问答
 
 ## 核心技术说明
 
-### 文档处理与 OCR
+### 文档处理与多模态识别（千问 VL + OCR 兜底）
 
-自定义文档加载器支持多种格式，对图片型文档自动调用 OCR：
+自定义文档加载器支持多种格式。图片内容优先调用**千问 VL 视觉大模型**（DashScope 原生 SDK）生成结构化 JSON——包含 `summary`（检索主文本）、`keywords`、`ocr_text`（图中原始文字，用于精确引用）、`tables`（转 Markdown 表格）、`charts`（图表类型/坐标轴/数据点/趋势结论）、`structure`（空间布局或流程关系）等字段，再扁平化为文本与正文一起切分、嵌入，使图表内容可被语义检索召回：
 
-| 加载器 | 支持格式 | 说明 |
+| 加载器 | 支持格式 | 图片处理策略 |
 |--------|---------|------|
-| OCRPDFLoader | `.pdf` | PyMuPDF 提取文本 + 图片 OCR |
+| OCRPDFLoader | `.pdf` | PyMuPDF 提取文本 + 大图（≥60% 页面占比）送 VL；**纯扫描页兜底**：页文本 < 30 字符且无大图时整页渲染送 VL |
 | OCRDOCLoader | `.docx` | 段落/表格提取 + 图片 OCR |
-| OCRPPTLoader | `.ppt` `.pptx` | 文本框架/表格提取 + 图片 OCR |
-| OCRIMGLoader | `.png` `.jpg` | 纯图片 OCR |
+| OCRPPTLoader | `.ppt` `.pptx` | 本地提取文本框架/表格 + 图片 shape 送 VL |
+| OCRIMGLoader | `.png` `.jpg` | 独立图片 VL 优先，失败自动回退本地 OCR |
 
-OCR 引擎：优先使用 RapidOCR Paddle，fallback 为 RapidOCR ONNX Runtime（CPU）。
+**VL 调用配置**：`config.ini` `[vlm]` 段配置模型名与业务空间 `api_host`，API Key 通过环境变量 `DASHSCOPE_API_KEY` 提供（需业务空间专用 Key）。内置指数退避重试（复用 `[retry]` 配置）；401 鉴权失败不重试、直接降级。
+
+**OCR 兜底引擎**：VL 失败或不可用时回退 RapidOCR（优先 Paddle，fallback ONNX Runtime/CPU），保证入库流程不中断。
+
+**强制重做某个已入库文件**：需同时删除 SQLite tracker 记录与 Milvus 对应 `ref_doc_id` 的旧块后再跑增量命令（仅删 tracker 记录会导致新旧内容不一致或向量缺失）；更简单的方式是修改文件内容触发 MODIFIED 路径（管线自动删旧块再插新块）。
 
 ### 文档质量评估 — 数据治理
 
@@ -872,7 +883,7 @@ OCR 引擎：优先使用 RapidOCR Paddle，fallback 为 RapidOCR ONNX Runtime�
 1. 扫描目录 → SHA-256 对比 SQLite → 四类分类
 2. DELETED → 通过 `ref_doc_id` 从 Milvus 原子删除
 3. MODIFIED → 先删旧块，避免僵尸向量
-4. NEW + MODIFIED → OCR 加载 → 文本清洗 → 质量评估 → 父子块切分 → LlamaIndex 批量插入
+4. NEW + MODIFIED → 加载（图片内容优先千问 VL，OCR 兜底）→ 文本清洗 → 质量评估 → 父子块切分 → LlamaIndex 批量插入
 5. UNCHANGED → 直接跳过，零计算开销
 6. 更新 SQLite 追踪记录（单个事务）
 
@@ -1203,5 +1214,6 @@ uv run pytest tests/test_chunk_config.py -v
 - [LlamaIndex](https://www.llamaindex.ai/) — 数据索引框架
 - [LangChain](https://www.langchain.com/) — LLM 应用框架
 - [RapidOCR](https://github.com/RapidAI/RapidOCR) — OCR 引擎
+- [DashScope / 通义千问 VL](https://help.aliyun.com/zh/model-studio/) — 多模态图片识别
 - [RAGAS](https://docs.ragas.io/) — RAG 评估框架
 - [mDeBERTa-v3](https://huggingface.co/MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7) — 多语言 NLI 幻觉检测
